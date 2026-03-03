@@ -2,6 +2,25 @@
 
 ---
 
+## 0.1.82
+
+### Added
+
+- **Multi-account rotation proxy** — start a local OpenAI-compatible proxy (`bin/free-coding-models.js --proxy`) that load-balances requests across multiple API keys per provider using Power-of-Two-Choices (P2C) routing. Automatically retries on quota errors, respects per-key circuit breakers, and tracks token usage per account.
+- **Multiple API keys per provider** — `apiKey` in config now accepts a string, array, or `{ keys: [...], strategy: "round-robin"|"random"|"p2c" }` object; backward-compatible with all existing single-key configs.
+- **AccountManager** (`lib/account-manager.js`) — P2C-based key selection, per-key health tracking, quota detection, sticky sessions (same key within a request chain), and cooldown/recovery logic.
+- **ErrorClassifier** (`lib/error-classifier.js`) — classifies API errors into quota, auth, rate-limit, or transient categories; drives circuit-breaker open/close decisions.
+- **RequestTransformer** (`lib/request-transformer.js`) — per-model thinking budget injection and context compression (truncates oldest messages when context exceeds threshold).
+- **ProxyServer** (`lib/proxy-server.js`) — full HTTP reverse-proxy with streaming passthrough, per-request token accounting, and structured request logging.
+- **TokenStats** (`lib/token-stats.js`) — rolling per-model / per-key token usage counters used by the proxy and TUI stats view.
+- **Model merger** (`lib/model-merger.js`) — `buildMergedModels()` groups cross-provider models (same base model available from multiple providers) into a single merged entry for display.
+- **OpenCode sync** (`lib/opencode-sync.js`) — `syncToOpenCode()` merges FCM-managed providers into `opencode.json` without overwriting user settings; creates a timestamped backup before every write.
+- **Settings overlay enhancements** — inside the Settings page (P key), new keybinds: **S** syncs FCM providers to OpenCode config, **R** restores the last backup, **+**/**-** cycle through configured API keys for the current provider, with masked key display (first 4 + `***` + last 3 chars).
+- **TUI proxy controls** — **X** key starts/stops the embedded proxy server; proxy address and live token-usage counters are shown in the status bar while the proxy is running.
+- **Merged model view** — the main model table can now display cross-provider merged entries, showing all available provider variants for a model in a single row.
+
+---
+
 ## 0.1.81
 
 ### Added
