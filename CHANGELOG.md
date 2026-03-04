@@ -1,46 +1,4 @@
 # Changelog
----
-
-## 0.1.83
-
-> Integrates upstream v0.1.82 (URL fixes, OpenRouter key validation) and extends the fork with usage observability, quota polling, proxy log hardening, upstream timeout enforcement, and 501 responses for unsupported paths.
-
-### Added
-
-- **Multi-account rotation proxy** — start a local OpenAI-compatible proxy (`bin/free-coding-models.js --proxy`) that load-balances requests across multiple API keys per provider using Power-of-Two-Choices (P2C) routing. Automatically retries on quota errors, respects per-key circuit breakers, and tracks token usage per account.
-- **Multiple API keys per provider** — `apiKey` in config now accepts a string or an array of strings; backward-compatible with all existing single-key configs. The proxy distributes requests across all configured keys using P2C routing.
-- **AccountManager** (`lib/account-manager.js`) — P2C-based key selection, per-key health tracking, quota detection, sticky sessions (same key within a request chain), and cooldown/recovery logic.
-- **ErrorClassifier** (`lib/error-classifier.js`) — classifies API errors into quota, auth, rate-limit, or transient categories; drives circuit-breaker open/close decisions.
-- **RequestTransformer** (`lib/request-transformer.js`) — per-model thinking budget injection and context compression (truncates oldest messages when context exceeds threshold).
-- **ProxyServer** (`lib/proxy-server.js`) — full HTTP reverse-proxy with streaming passthrough, per-request token accounting, and structured request logging.
-- **TokenStats** (`lib/token-stats.js`) — rolling per-model / per-key token usage counters used by the proxy and TUI stats view.
-- **Model merger** (`lib/model-merger.js`) — `buildMergedModels()` groups cross-provider models (same base model available from multiple providers) into a single merged entry for display.
-- **OpenCode sync** (`lib/opencode-sync.js`) — `syncToOpenCode()` merges FCM-managed providers into `opencode.json` without overwriting user settings; creates a timestamped backup before every write.
-- **Settings overlay enhancements** — inside the Settings page (P key), new keybinds: **S** syncs FCM providers to OpenCode config, **R** restores the last backup, **+** opens an empty input to append a new API key (supports multiple keys per provider), **-** removes the last configured key (collapses array-of-1 back to string; deletes when empty), **Enter** edits the primary key. Provider rows display the masked primary key plus a `(+N more)` indicator when multiple keys are configured.
-- **TUI proxy controls** — **X** key starts/stops the embedded proxy server; proxy address and live token-usage counters are shown in the status bar while the proxy is running.
-- **Merged model view** — the main model table can now display cross-provider merged entries, showing all available provider variants for a model in a single row.
-- **Usage observability & Logs page** — structured NDJSON request log written by the proxy; new TUI Logs page shows recent proxy requests with status, model, tokens, and latency.
-- **Provider quota pollers** (`lib/provider-quota-fetchers.js`) — TTL-cached quota checks for OpenRouter and SiliconFlow; replaces inline fetch logic; injectable fetch for deterministic tests.
-- **Proxy log coherence** — `ProxyServer` now records every upstream attempt (success and failure) in `TokenStats` with consistent fields (`success`, `statusCode`, `tokens`, `latency`); no attempt goes unlogged.
-- **`MODEL_NOT_FOUND` error type** — `lib/error-classifier.js` gains a new `MODEL_NOT_FOUND` classification for provider 404/410 responses whose body contains keywords like `"model not found"`, `"inaccessible"`, `"not deployed"`, or `"model unavailable"`. Classified as `shouldRetry: true, skipAccount: true` — rotates to the next provider rather than forwarding the 404 to the client.
-- **12 new tests** — upstream-timeout suite (3), unsupported-paths suite (4), SSE-disconnect suite (1), provider-404-rotation suite (4) in `test/proxy-server.test.js`; sticky-health-break (1) in `test/account-manager.test.js`; MODEL_NOT_FOUND classification (5) in `test/error-classifier.test.js`.
-
-### Fixed
-
-- **Proxy upstream timeout** — `ProxyServer` now enforces a 45-second timeout on every upstream HTTP request (`upstreamTimeoutMs`, default 45 000 ms). Previously the proxy would hang for the full upstream timeout (up to 302 s for nvidia NIM 504s), making OpenCode appear to receive nothing. The timed-out attempt is now treated as a network error and retried against the next available account.
-- **501 for unsupported OpenAI paths** — `POST /v1/completions` and `POST /v1/responses` now return `501 Not Implemented` (with a clear error message pointing to `/v1/chat/completions`) instead of a silent `404 Not Found`.
-- **Telemetry opt-out respected** — `ensureTelemetryConfig` no longer forces `enabled: true` when the user has explicitly set `enabled: false`. First-run default (unset) still initialises to `true`.
-- **Auto-updater relaunch absolute path** — both normal and sudo-retry relaunch paths now use `process.argv[1]` (absolute) instead of the relative `bin/free-coding-models.js`, fixing relaunch failures when the tool is run from a different working directory.
-- **SSE client-disconnect cleanup** — `ProxyServer` now registers a `clientRes.on('close')` listener on SSE streams that destroys both the upstream request and response when the downstream client disconnects, preventing upstream connection leaks.
-- **Provider 404 model-not-found rotation** — generic 404 errors from an upstream whose body contains model-not-found keywords are classified as `MODEL_NOT_FOUND` and trigger provider rotation; a plain URL-routing 404 (no model keywords) is forwarded directly to the client as before.
-
-### Changed
-
-- **Deferred startup log prune** — `TokenStats` constructor calls `_pruneOldLogs()` via `setImmediate` instead of synchronously, keeping constructor latency minimal.
-- **Usage snapshot cache** — `lib/usage-reader.js` maintains a module-level 750 ms parse cache keyed by stats-file path; repeated TUI renders within the same animation frame no longer each hit the disk. A new `clearUsageCache()` export allows tests to evict the cache deterministically.
-- **Canonical telemetry source in TUI** — removed the hardcoded `PROVIDERS_WITHOUT_QUOTA_TELEMETRY` set from `bin/free-coding-models.js`; `usagePlaceholderForProvider()` now delegates to `isKnownQuotaTelemetry()` from `lib/quota-capabilities.js` — single source of truth.
-- **Sticky session breaks on low health score** — `AccountManager.selectAccount()` now breaks sticky routing if the sticky account's computed health score falls below `0.65` (slow/degraded provider), falling through to P2C re-selection rather than pinning the client to a sluggish key.
-- **Upstream timeout tightened to 45 s** — `upstreamTimeoutMs` default reduced from 120 s to 45 s; `ensureProxyRunning` no longer passes an explicit override (inherits the constructor default).
 
 ---
 
@@ -223,6 +181,67 @@
 - **Help overlay (K)** — removed the Filters section; moved `T` (Cycle tier) and `N` (Cycle origin) shortcuts into their respective column description rows. Added `Q` (Smart Recommend) and `Shift+P` (Cycle profile) shortcuts. Added `--recommend` and `--profile` to the CLI flags section.
 - **Sort/pin order** — `sortResultsWithPinnedFavorites()` now pins recommended+favorite models first, then recommended-only, then favorite-only, then normal sorted models.
 - **Animation loop priority** — Settings > Recommend > Help > Table.
+
+---
+
+## 0.1.68
+
+### Added
+
+- **ZAI reverse proxy for OpenCode** -- When selecting a ZAI model, a local HTTP proxy automatically starts to translate OpenCode's `/v1/*` requests to ZAI's `/api/coding/paas/v4/*` API format. Proxy lifecycle is fully managed (starts on Enter, stops on OpenCode exit).
+- **Stale config cleanup on OpenCode exit** -- The `spawnOpenCode` exit handler now removes the ZAI provider block from `opencode.json` so leftover config does not cause "model not valid" errors on the next manual OpenCode launch.
+
+### Fixed
+
+- **OpenCode config path on Windows** -- OpenCode uses `xdg-basedir` which resolves to `%USERPROFILE%\.config` on all platforms. We were writing to `%APPDATA%\Roaming\opencode\` on Windows, so OpenCode never saw the ZAI provider config. Config path is now `~/.config/opencode/opencode.json` on all platforms.
+- **`apiKey` field for ZAI provider** -- Changed from `{env:ZAI_API_KEY}` template string to the actual resolved key so OpenCode's `@ai-sdk/openai-compatible` provider can authenticate immediately.
+
+### Changed
+
+- **Default ping interval 3s -> 60s** -- Reduced re-ping frequency from every 3 seconds to every 60 seconds for a calmer monitoring experience (still adjustable with W/X keys).
+- **Suppress MaxListeners warning** -- Set `NODE_NO_WARNINGS=1` in the OpenCode child process environment to suppress Node.js EventEmitter warnings.
+- **ZAI models synced to 5** -- Updated `sources.js` to 5 ZAI API models with SWE-bench scores: GLM-5 (77.8%), GLM-4.5 (75.0%), GLM-4.7 (73.8%), GLM-4.5-Air (72.0%), GLM-4.6 (70.0%).
+- **README updates** -- Updated model/provider counts (139 models, 18 providers), ZAI model table with SWE-bench scores, ping interval references (60s), added ZAI proxy documentation.
+- **Smart Recommend (Q key)** — new modal overlay with a 3-question wizard (task type, priority, context budget) that runs a 10-second targeted analysis (2 pings/sec) and recommends the Top 3 models for your use case. Recommended models are pinned above favorites with 🎯 prefix and green row highlight.
+- **Config Profiles** — save/load named configuration profiles (`--profile work`, `--profile fast`, etc.). Each profile stores API keys, enabled providers, favorites, tier filters, ping interval, and default sort. **Shift+P** cycles through profiles live in the TUI.
+- **`--recommend` CLI flag** — auto-opens the Smart Recommend overlay on startup.
+- **`--profile <name>` CLI flag** — loads a saved profile at startup; errors if profile doesn't exist.
+- **Scoring engine** (`lib/utils.js`) — `TASK_TYPES`, `PRIORITY_TYPES`, `CONTEXT_BUDGETS`, `parseCtxToK()`, `parseSweToNum()`, `scoreModelForTask()`, `getTopRecommendations()` for the recommendation algorithm.
+- **Profile management** (`lib/config.js`) — `saveAsProfile()`, `loadProfile()`, `listProfiles()`, `deleteProfile()`, `getActiveProfileName()`, `setActiveProfile()`.
+- 43 new unit tests (131 total) covering scoring constants, `scoreModelForTask`, `getTopRecommendations`, `--profile`/`--recommend` arg parsing, and config profile CRUD.
+- **iFlow provider** — new provider with 11 free coding models (TBStars2, DeepSeek V3/V3.2/R1, Qwen3 Coder Plus/235B/32B/Max, Kimi K2, GLM-4.6). Free for individual users with no request limits. API key expires every 7 days.
+- **TUI footer contributors** — added contributor names directly in footer line (vava-nessa • erwinh22 • whit3rabbit • skylaweber).
+
+### Changed
+
+- **Help overlay (K)** — removed the Filters section; moved `T` (Cycle tier) and `N` (Cycle origin) shortcuts into their respective column description rows. Added `Q` (Smart Recommend) and `Shift+P` (Cycle profile) shortcuts. Added `--recommend` and `--profile` to the CLI flags section.
+- **Sort/pin order** — `sortResultsWithPinnedFavorites()` now pins recommended+favorite models first, then recommended-only, then favorite-only, then normal sorted models.
+- **Animation loop priority** — Settings > Recommend > Help > Table.
+
+### Fixed
+
+- **`--profile` arg parsing** — the profile value (e.g. `work` in `--profile work`) was incorrectly captured as `apiKey`; fixed with `skipIndices` Set in `parseArgs()`.
+- **`recommendScore` undefined** — `sortResultsWithPinnedFavorites()` referenced `recommendScore` but it was never set on result objects; now set during `startRecommendAnalysis()`.
+- **JSDoc in lib/config.js** — fixed broken JSON structure in config example (duplicate lines, incorrect brackets).
+- **CHANGELOG cleanup** — removed `[fork]` prefixes from entries for cleaner presentation.
+- **Smart Recommend (Q key)** — new modal overlay with a 3-question wizard (task type, priority, context budget) that runs a 10-second targeted analysis (2 pings/sec) and recommends the Top 3 models for your use case. Recommended models are pinned above favorites with 🎯 prefix and green row highlight.
+- **Config Profiles** — save/load named configuration profiles (`--profile work`, `--profile fast`, etc.). Each profile stores API keys, enabled providers, favorites, tier filters, ping interval, and default sort. **Shift+P** cycles through profiles live in the TUI.
+- **`--recommend` CLI flag** — auto-opens the Smart Recommend overlay on startup.
+- **`--profile <name>` CLI flag** — loads a saved profile at startup; errors if profile doesn't exist.
+- **Scoring engine** (`lib/utils.js`) — `TASK_TYPES`, `PRIORITY_TYPES`, `CONTEXT_BUDGETS`, `parseCtxToK()`, `parseSweToNum()`, `scoreModelForTask()`, `getTopRecommendations()` for the recommendation algorithm.
+- **Profile management** (`lib/config.js`) — `saveAsProfile()`, `loadProfile()`, `listProfiles()`, `deleteProfile()`, `getActiveProfileName()`, `setActiveProfile()`.
+- 43 new unit tests (131 total) covering scoring constants, `scoreModelForTask`, `getTopRecommendations`, `--profile`/`--recommend` arg parsing, and config profile CRUD.
+
+### Changed
+
+- **Help overlay (K)** — removed the Filters section; moved `T` (Cycle tier) and `N` (Cycle origin) shortcuts into their respective column description rows. Added `Q` (Smart Recommend) and `Shift+P` (Cycle profile) shortcuts. Added `--recommend` and `--profile` to the CLI flags section.
+- **Sort/pin order** — `sortResultsWithPinnedFavorites()` now pins recommended+favorite models first, then recommended-only, then favorite-only, then normal sorted models.
+- **Animation loop priority** — Settings > Recommend > Help > Table.
+
+### Fixed
+
+- **`--profile` arg parsing** — the profile value (e.g. `work` in `--profile work`) was incorrectly captured as `apiKey`; fixed with `skipIndices` Set in `parseArgs()`.
+- **`recommendScore` undefined** — `sortResultsWithPinnedFavorites()` referenced `recommendScore` but it was never set on result objects; now set during `startRecommendAnalysis()`.
 
 ---
 
