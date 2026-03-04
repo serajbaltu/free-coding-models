@@ -55,6 +55,20 @@ describe('TokenStats – quota snapshots', () => {
     assert.strictEqual(snap.providerKey, 'prov-a')
     assert.strictEqual(snap.modelId, 'model-x')
     assert.ok(typeof snap.updatedAt === 'string', 'updatedAt must be an ISO string')
+
+    const providerSnap = summary.quotaSnapshots.byProvider['prov-a']
+    assert.ok(providerSnap, 'byProvider must contain prov-a')
+    assert.strictEqual(providerSnap.quotaPercent, 75)
+  })
+
+  it('updateQuotaSnapshot keeps latest provider quota across models', () => {
+    const ts = freshTokenStats()
+    ts.updateQuotaSnapshot('acct-1', { quotaPercent: 90, providerKey: 'groq', modelId: 'model-a' })
+    ts.updateQuotaSnapshot('acct-2', { quotaPercent: 62, providerKey: 'groq', modelId: 'model-b' })
+
+    const providerSnap = ts.getSummary().quotaSnapshots.byProvider.groq
+    assert.ok(providerSnap)
+    assert.strictEqual(providerSnap.quotaPercent, 62)
   })
 
   it('updateQuotaSnapshot overwrites previous snapshot for the same account', () => {
@@ -160,6 +174,7 @@ describe('TokenStats – quota snapshots', () => {
     assert.ok(summary.quotaSnapshots, 'quotaSnapshots must be present even for old schema')
     assert.deepStrictEqual(summary.quotaSnapshots.byAccount, {})
     assert.deepStrictEqual(summary.quotaSnapshots.byModel, {})
+    assert.deepStrictEqual(summary.quotaSnapshots.byProvider, {})
   })
 
   it('existing record() behavior is unaffected by quota snapshot changes', () => {
@@ -181,11 +196,40 @@ describe('TokenStats – quota snapshots', () => {
     assert.ok(summary.recentRequests.length >= 1)
   })
 
+  it('record() writes enriched JSONL log schema with ISO timestamp', () => {
+    const ts = freshTokenStats()
+    ts.record({
+      accountId: 'acct-1',
+      modelId: 'model-1',
+      providerKey: 'groq',
+      statusCode: 200,
+      requestType: 'chat.completions',
+      promptTokens: 12,
+      completionTokens: 8,
+      latencyMs: 99,
+      success: true,
+    })
+
+    const logFile = join(tmpDataDir, 'request-log.jsonl')
+    const lines = readFileSync(logFile, 'utf8').trim().split('\n')
+    assert.strictEqual(lines.length, 1)
+    const entry = JSON.parse(lines[0])
+
+    assert.strictEqual(typeof entry.timestamp, 'string')
+    assert.ok(!Number.isNaN(Date.parse(entry.timestamp)), 'timestamp must be parseable ISO date')
+    assert.strictEqual(entry.providerKey, 'groq')
+    assert.strictEqual(entry.statusCode, 200)
+    assert.strictEqual(entry.requestType, 'chat.completions')
+    assert.strictEqual(entry.promptTokens, 12)
+    assert.strictEqual(entry.completionTokens, 8)
+  })
+
   it('getSummary includes quotaSnapshots even when empty', () => {
     const ts = freshTokenStats()
     const summary = ts.getSummary()
     assert.ok('quotaSnapshots' in summary, 'getSummary must always include quotaSnapshots key')
     assert.ok('byAccount' in summary.quotaSnapshots)
     assert.ok('byModel' in summary.quotaSnapshots)
+    assert.ok('byProvider' in summary.quotaSnapshots)
   })
 })

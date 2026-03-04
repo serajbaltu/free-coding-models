@@ -58,6 +58,7 @@ describe('log-reader – parseLogLine', () => {
     const row = parseLogLine(JSON.stringify(entry))
     assert.ok(row !== null)
     assert.strictEqual(row.time, '2026-03-01T00:00:00.000Z')
+    assert.strictEqual(row.requestType, 'chat.completions')
     assert.strictEqual(row.model, 'unknown')
     assert.strictEqual(row.provider, 'unknown')
     assert.strictEqual(row.status, 'unknown')
@@ -77,6 +78,7 @@ describe('log-reader – parseLogLine', () => {
     const row = parseLogLine(JSON.stringify(entry))
     assert.ok(row !== null)
     assert.strictEqual(row.time, '2026-03-02T12:00:00.000Z')
+    assert.strictEqual(row.requestType, 'chat.completions')
     assert.strictEqual(row.model, 'llama-3.3-70b-instruct')
     assert.strictEqual(row.provider, 'nvidia')
     assert.strictEqual(row.status, '200')
@@ -115,6 +117,45 @@ describe('log-reader – parseLogLine', () => {
     const row = parseLogLine(JSON.stringify(entry))
     assert.ok(row !== null)
     assert.strictEqual(row.tokens, 30)
+  })
+
+  it('parses numeric timestamp into ISO format', () => {
+    const row = parseLogLine(JSON.stringify({ timestamp: 1772551002198 }))
+    assert.ok(row !== null)
+    assert.match(row.time, /^\d{4}-\d{2}-\d{2}T/)
+  })
+
+  it('falls back to top-level camelCase token fields', () => {
+    const entry = {
+      timestamp: '2026-03-01T00:00:00.000Z',
+      promptTokens: 25,
+      completionTokens: 10,
+    }
+    const row = parseLogLine(JSON.stringify(entry))
+    assert.ok(row !== null)
+    assert.strictEqual(row.tokens, 35)
+  })
+
+  it('infers provider/status from accountId and success fields', () => {
+    const entry = {
+      timestamp: '2026-03-01T00:00:00.000Z',
+      accountId: 'groq/llama-3.3-70b/0',
+      success: true,
+    }
+    const row = parseLogLine(JSON.stringify(entry))
+    assert.ok(row !== null)
+    assert.strictEqual(row.provider, 'groq')
+    assert.strictEqual(row.status, '200')
+  })
+
+  it('uses requestType when provided', () => {
+    const entry = {
+      timestamp: '2026-03-01T00:00:00.000Z',
+      requestType: 'chat.completions',
+    }
+    const row = parseLogLine(JSON.stringify(entry))
+    assert.ok(row !== null)
+    assert.strictEqual(row.requestType, 'chat.completions')
   })
 })
 

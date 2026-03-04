@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { classifyError, CircuitBreaker } from '../lib/error-classifier.js'
+import { classifyError, CircuitBreaker, rateLimitConfidence } from '../lib/error-classifier.js'
 
 describe('classifyError', () => {
   it('classifies 429 as RATE_LIMITED', () => {
@@ -82,5 +82,45 @@ describe('CircuitBreaker', () => {
     cb.isOpen() // triggers half-open transition
     cb.recordFailure() // fail during half-open
     assert.strictEqual(cb.isOpen(), true) // re-opened
+  })
+})
+
+describe('rateLimitConfidence', () => {
+  it('returns quota_exhaustion_likely when body contains quota keywords', () => {
+    const confidence = rateLimitConfidence(429, 'quota exceeded for this month', {})
+    assert.strictEqual(confidence, 'quota_exhaustion_likely')
+  })
+
+  it('returns quota_exhaustion_likely for billing-related messages', () => {
+    const confidence = rateLimitConfidence(429, 'insufficient_quota on your account', {})
+    assert.strictEqual(confidence, 'quota_exhaustion_likely')
+  })
+
+  it('returns generic_rate_limit for plain 429 with no quota keywords', () => {
+    const confidence = rateLimitConfidence(429, 'too many requests', {})
+    assert.strictEqual(confidence, 'generic_rate_limit')
+  })
+
+  it('returns generic_rate_limit for empty body 429', () => {
+    const confidence = rateLimitConfidence(429, '', {})
+    assert.strictEqual(confidence, 'generic_rate_limit')
+  })
+
+  it('returns generic_rate_limit for non-429 status codes', () => {
+    assert.strictEqual(rateLimitConfidence(500, 'quota exceeded', {}), 'generic_rate_limit')
+    assert.strictEqual(rateLimitConfidence(200, 'quota exceeded', {}), 'generic_rate_limit')
+  })
+
+  it('classifyError result includes rateLimitConfidence for 429 responses', () => {
+    const r1 = classifyError(429, 'quota exceeded', {})
+    assert.strictEqual(r1.rateLimitConfidence, 'quota_exhaustion_likely')
+
+    const r2 = classifyError(429, 'too many requests', {})
+    assert.strictEqual(r2.rateLimitConfidence, 'generic_rate_limit')
+  })
+
+  it('classifyError does not include rateLimitConfidence for non-429 responses', () => {
+    const r = classifyError(500, 'internal error', {})
+    assert.strictEqual(r.rateLimitConfidence, undefined)
   })
 })

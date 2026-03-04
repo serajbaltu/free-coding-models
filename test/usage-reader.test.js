@@ -1,6 +1,6 @@
 /**
  * @file test/usage-reader.test.js
- * @description Tests for lib/usage-reader.js pure functions (Task 2).
+ * @description Tests for lib/usage-reader.js pure functions (Task 3).
  *
  * Each describe block gets its own isolated temp directory via makeTempDir().
  */
@@ -10,7 +10,7 @@ import assert from 'node:assert/strict'
 import { mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import { loadUsageMap, usageForModelId } from '../lib/usage-reader.js'
+import { loadUsageSnapshot, loadUsageMap, usageForModelId, usageForRow, SNAPSHOT_TTL_MS } from '../lib/usage-reader.js'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -22,6 +22,11 @@ function makeTempDir(label) {
   const write = (data) => writeFileSync(statsFile, JSON.stringify(data))
   const cleanup = () => { try { rmSync(dir, { recursive: true, force: true }) } catch { /* ignore */ } }
   return { dir, statsFile, write, cleanup }
+}
+
+/** Return an ISO timestamp that is `offsetMs` milliseconds before now (default 60s = fresh). */
+function freshTs(offsetMs = 60 * 1000) {
+  return new Date(Date.now() - offsetMs).toISOString()
 }
 
 // ─── Suite: loadUsageMap ──────────────────────────────────────────────────────
@@ -63,8 +68,8 @@ describe('usage-reader – loadUsageMap', () => {
       quotaSnapshots: {
         byAccount: {},
         byModel: {
-          'claude-3-5': { quotaPercent: 80, updatedAt: '2026-03-01T00:00:00.000Z' },
-          'gpt-4o': { quotaPercent: 45, updatedAt: '2026-03-01T01:00:00.000Z' },
+          'claude-3-5': { quotaPercent: 80, updatedAt: freshTs() },
+          'gpt-4o': { quotaPercent: 45, updatedAt: freshTs() },
         },
       },
     })
@@ -79,7 +84,7 @@ describe('usage-reader – loadUsageMap', () => {
       quotaSnapshots: {
         byAccount: {},
         byModel: {
-          'gemini-pro': { quotaPercent: 60, updatedAt: '2026-03-01T12:00:00.000Z' },
+          'gemini-pro': { quotaPercent: 60, updatedAt: freshTs() },
         },
       },
     })
@@ -92,8 +97,8 @@ describe('usage-reader – loadUsageMap', () => {
       quotaSnapshots: {
         byAccount: {},
         byModel: {
-          'good-model': { quotaPercent: 70, updatedAt: '2026-03-01T00:00:00.000Z' },
-          'bad-model': { updatedAt: '2026-03-01T00:00:00.000Z' }, // missing quotaPercent
+          'good-model': { quotaPercent: 70, updatedAt: freshTs() },
+          'bad-model': { updatedAt: freshTs() }, // missing quotaPercent
         },
       },
     })
@@ -107,8 +112,8 @@ describe('usage-reader – loadUsageMap', () => {
       quotaSnapshots: {
         byAccount: {},
         byModel: {
-          'fine-model': { quotaPercent: 55, updatedAt: '2026-03-01T00:00:00.000Z' },
-          'weird-model': { quotaPercent: 'lots', updatedAt: '2026-03-01T00:00:00.000Z' },
+          'fine-model': { quotaPercent: 55, updatedAt: freshTs() },
+          'weird-model': { quotaPercent: 'lots', updatedAt: freshTs() },
         },
       },
     })
@@ -127,6 +132,30 @@ describe('usage-reader – loadUsageMap', () => {
   })
 })
 
+describe('usage-reader – loadUsageSnapshot', () => {
+  let ctx
+
+  before(() => { ctx = makeTempDir('lus') })
+  after(() => ctx.cleanup())
+
+  it('returns model and provider maps', () => {
+    ctx.write({
+      quotaSnapshots: {
+        byModel: {
+          'model-a': { quotaPercent: 80, updatedAt: freshTs() },
+        },
+        byProvider: {
+          groq: { quotaPercent: 64, updatedAt: freshTs() },
+        },
+      },
+    })
+
+    const snapshot = loadUsageSnapshot(ctx.statsFile)
+    assert.strictEqual(snapshot.byModel['model-a'], 80)
+    assert.strictEqual(snapshot.byProvider.groq, 64)
+  })
+})
+
 // ─── Suite: usageForModelId ───────────────────────────────────────────────────
 
 describe('usage-reader – usageForModelId', () => {
@@ -140,7 +169,7 @@ describe('usage-reader – usageForModelId', () => {
       quotaSnapshots: {
         byAccount: {},
         byModel: {
-          'existing-model': { quotaPercent: 70, updatedAt: '2026-01-01T00:00:00.000Z' },
+          'existing-model': { quotaPercent: 70, updatedAt: freshTs() },
         },
       },
     })
@@ -153,7 +182,7 @@ describe('usage-reader – usageForModelId', () => {
       quotaSnapshots: {
         byAccount: {},
         byModel: {
-          'known-model': { quotaPercent: 88, updatedAt: '2026-01-01T00:00:00.000Z' },
+          'known-model': { quotaPercent: 88, updatedAt: freshTs() },
         },
       },
     })
@@ -173,6 +202,40 @@ describe('usage-reader – usageForModelId', () => {
   })
 })
 
+describe('usage-reader – usageForRow', () => {
+  let ctx
+
+  before(() => { ctx = makeTempDir('ufr') })
+  after(() => ctx.cleanup())
+
+  it('prefers model-specific quota when available', () => {
+    ctx.write({
+      quotaSnapshots: {
+        byModel: { 'model-a': { quotaPercent: 71, updatedAt: freshTs() } },
+        byProvider: { groq: { quotaPercent: 55, updatedAt: freshTs() } },
+      },
+    })
+
+    assert.strictEqual(usageForRow('groq', 'model-a', ctx.statsFile), 71)
+  })
+
+  it('falls back to provider quota when model is missing', () => {
+    ctx.write({
+      quotaSnapshots: {
+        byModel: {},
+        byProvider: { groq: { quotaPercent: 77, updatedAt: freshTs() } },
+      },
+    })
+
+    assert.strictEqual(usageForRow('groq', 'unknown-model', ctx.statsFile), 77)
+  })
+
+  it('returns null when neither model nor provider usage exists', () => {
+    ctx.write({ quotaSnapshots: { byModel: {}, byProvider: {} } })
+    assert.strictEqual(usageForRow('cerebras', 'model-x', ctx.statsFile), null)
+  })
+})
+
 // ─── Suite: multi-account aggregation (integration) ──────────────────────────
 
 describe('usage-reader – aggregation from multiple accounts (integration)', () => {
@@ -183,19 +246,174 @@ describe('usage-reader – aggregation from multiple accounts (integration)', ()
 
   it('byModel quotaPercent reflects average of multiple accounts sharing a model', () => {
     // Simulate what TokenStats.updateQuotaSnapshot would produce
+    const freshTime = new Date(Date.now() - 60 * 1000).toISOString() // 1 min ago = fresh
     ctx.write({
       quotaSnapshots: {
         byAccount: {
-          'acct-a': { quotaPercent: 90, providerKey: 'p1', modelId: 'shared', updatedAt: '2026-03-01T00:00:00.000Z' },
-          'acct-b': { quotaPercent: 50, providerKey: 'p2', modelId: 'shared', updatedAt: '2026-03-01T00:01:00.000Z' },
+          'acct-a': { quotaPercent: 90, providerKey: 'p1', modelId: 'shared', updatedAt: freshTime },
+          'acct-b': { quotaPercent: 50, providerKey: 'p2', modelId: 'shared', updatedAt: freshTime },
         },
         byModel: {
           // Average of 90 + 50 = 70
-          'shared': { quotaPercent: 70, updatedAt: '2026-03-01T00:01:00.000Z' },
+          'shared': { quotaPercent: 70, updatedAt: freshTime },
         },
       },
     })
     const map = loadUsageMap(ctx.statsFile)
     assert.strictEqual(map['shared'], 70, 'should reflect the stored average')
+  })
+})
+
+// ─── Suite: snapshot freshness (TTL) ─────────────────────────────────────────
+
+describe('usage-reader – snapshot freshness TTL', () => {
+  let ctx
+
+  before(() => { ctx = makeTempDir('ttl') })
+  after(() => ctx.cleanup())
+
+  it('exports SNAPSHOT_TTL_MS as a positive number (30 minutes)', () => {
+    assert.ok(typeof SNAPSHOT_TTL_MS === 'number', 'SNAPSHOT_TTL_MS must be a number')
+    assert.ok(SNAPSHOT_TTL_MS > 0, 'SNAPSHOT_TTL_MS must be positive')
+    assert.strictEqual(SNAPSHOT_TTL_MS, 30 * 60 * 1000, 'SNAPSHOT_TTL_MS must be 30 minutes')
+  })
+
+  it('loadUsageMap includes fresh model entry (updatedAt within TTL)', () => {
+    const freshTime = new Date(Date.now() - 60 * 1000).toISOString() // 1 min ago
+    ctx.write({
+      quotaSnapshots: {
+        byModel: {
+          'fresh-model': { quotaPercent: 75, updatedAt: freshTime },
+        },
+        byProvider: {},
+      },
+    })
+    const map = loadUsageMap(ctx.statsFile)
+    assert.strictEqual(map['fresh-model'], 75, 'fresh entry must be included')
+  })
+
+  it('loadUsageMap excludes stale model entry (updatedAt older than TTL)', () => {
+    const staleTime = new Date(Date.now() - 31 * 60 * 1000).toISOString() // 31 min ago
+    ctx.write({
+      quotaSnapshots: {
+        byModel: {
+          'stale-model': { quotaPercent: 60, updatedAt: staleTime },
+        },
+        byProvider: {},
+      },
+    })
+    const map = loadUsageMap(ctx.statsFile)
+    assert.ok(!('stale-model' in map), 'stale entry (>30m) must be excluded from loadUsageMap')
+  })
+
+  it('loadUsageMap excludes model entry exactly at TTL boundary (exclusive)', () => {
+    // Exactly at 30m (boundary): should be treated as stale
+    const boundaryTime = new Date(Date.now() - 30 * 60 * 1000).toISOString()
+    ctx.write({
+      quotaSnapshots: {
+        byModel: {
+          'boundary-model': { quotaPercent: 50, updatedAt: boundaryTime },
+        },
+        byProvider: {},
+      },
+    })
+    const map = loadUsageMap(ctx.statsFile)
+    assert.ok(!('boundary-model' in map), 'entry at exactly TTL boundary must be excluded')
+  })
+
+  it('loadUsageMap includes model entry just inside TTL (updatedAt < 30m ago)', () => {
+    // 29m59s ago: just within TTL — must be included
+    const justFreshTime = new Date(Date.now() - (30 * 60 * 1000 - 1000)).toISOString()
+    ctx.write({
+      quotaSnapshots: {
+        byModel: {
+          'just-fresh-model': { quotaPercent: 88, updatedAt: justFreshTime },
+        },
+        byProvider: {},
+      },
+    })
+    const map = loadUsageMap(ctx.statsFile)
+    assert.strictEqual(map['just-fresh-model'], 88, 'entry just inside TTL must be included')
+  })
+
+  it('loadUsageMap includes entry without updatedAt (backward compat: no TTL filter)', () => {
+    // Old snapshots without updatedAt are included to preserve backward compatibility.
+    // (Freshness check only applies when updatedAt is present.)
+    ctx.write({
+      quotaSnapshots: {
+        byModel: {
+          'no-timestamp-model': { quotaPercent: 42 },
+        },
+        byProvider: {},
+      },
+    })
+    const map = loadUsageMap(ctx.statsFile)
+    assert.strictEqual(map['no-timestamp-model'], 42, 'entry without updatedAt must still be included for backward compat')
+  })
+
+  it('loadUsageSnapshot excludes stale provider entry (updatedAt older than TTL)', () => {
+    const staleTime = new Date(Date.now() - 45 * 60 * 1000).toISOString() // 45 min ago
+    const freshTime = new Date(Date.now() - 5 * 60 * 1000).toISOString() // 5 min ago
+    ctx.write({
+      quotaSnapshots: {
+        byModel: {
+          'model-b': { quotaPercent: 80, updatedAt: freshTime },
+        },
+        byProvider: {
+          'stale-provider': { quotaPercent: 70, updatedAt: staleTime },
+          'fresh-provider': { quotaPercent: 60, updatedAt: freshTime },
+        },
+      },
+    })
+    const snap = loadUsageSnapshot(ctx.statsFile)
+    assert.ok(!('stale-provider' in snap.byProvider), 'stale provider must be excluded')
+    assert.strictEqual(snap.byProvider['fresh-provider'], 60, 'fresh provider must be included')
+  })
+
+  it('usageForRow returns null when model snapshot is stale (falls back to provider, but provider also stale)', () => {
+    const staleTime = new Date(Date.now() - 40 * 60 * 1000).toISOString() // 40 min ago
+    ctx.write({
+      quotaSnapshots: {
+        byModel: {
+          'stale-model': { quotaPercent: 50, updatedAt: staleTime },
+        },
+        byProvider: {
+          'stale-prov': { quotaPercent: 60, updatedAt: staleTime },
+        },
+      },
+    })
+    const result = usageForRow('stale-prov', 'stale-model', ctx.statsFile)
+    assert.strictEqual(result, null, 'both model and provider are stale: result must be null')
+  })
+
+  it('usageForRow uses fresh provider fallback when model is stale', () => {
+    const staleTime = new Date(Date.now() - 40 * 60 * 1000).toISOString()
+    const freshTime = new Date(Date.now() - 2 * 60 * 1000).toISOString()
+    ctx.write({
+      quotaSnapshots: {
+        byModel: {
+          'stale-model': { quotaPercent: 50, updatedAt: staleTime },
+        },
+        byProvider: {
+          'fresh-prov': { quotaPercent: 72, updatedAt: freshTime },
+        },
+      },
+    })
+    const result = usageForRow('fresh-prov', 'stale-model', ctx.statsFile)
+    assert.strictEqual(result, 72, 'stale model snapshot must fall back to fresh provider')
+  })
+
+  it('usageForModelId returns null when snapshot is stale', () => {
+    const staleTime = new Date(Date.now() - 35 * 60 * 1000).toISOString()
+    ctx.write({
+      quotaSnapshots: {
+        byAccount: {},
+        byModel: {
+          'some-model': { quotaPercent: 55, updatedAt: staleTime },
+        },
+      },
+    })
+    const result = usageForModelId('some-model', ctx.statsFile)
+    assert.strictEqual(result, null, 'stale model snapshot must return null from usageForModelId')
   })
 })

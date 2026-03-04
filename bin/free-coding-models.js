@@ -100,7 +100,7 @@ import { loadConfig, saveConfig, getApiKey, resolveApiKeys, isProviderEnabled, s
 import { buildMergedModels } from '../lib/model-merger.js'
 import { ProxyServer } from '../lib/proxy-server.js'
 import { loadOpenCodeConfig, saveOpenCodeConfig, syncToOpenCode, restoreOpenCodeBackup } from '../lib/opencode-sync.js'
-import { loadUsageSnapshot } from '../lib/usage-reader.js'
+import { usageForRow as _usageForRow } from '../lib/usage-reader.js'
 import { loadRecentLogs } from '../lib/log-reader.js'
 import { parseOpenRouterResponse, fetchProviderQuota as _fetchProviderQuotaFromModule } from '../lib/provider-quota-fetchers.js'
 
@@ -2238,17 +2238,80 @@ function registerExitHandlers() {
 
 // 📖 startProxyAndLaunch: Starts ProxyServer with N accounts and launches OpenCode via fcm-proxy.
 // 📖 Falls back to the normal direct flow if the proxy cannot start.
-async function startProxyAndLaunch(model, accounts, fcmConfig) {
+function buildProxyTopologyFromConfig(fcmConfig) {
+  const accounts = []
+  const proxyModels = {}
+
+  for (const merged of mergedModels) {
+    proxyModels[merged.slug] = { name: merged.label }
+
+    for (const providerEntry of merged.providers) {
+      const keys = resolveApiKeys(fcmConfig, providerEntry.providerKey)
+      const providerSource = sources[providerEntry.providerKey]
+      if (!providerSource) continue
+
+      const rawUrl = resolveCloudflareUrl(providerSource.url)
+      const baseUrl = rawUrl.replace(/\/chat\/completions$/, '')
+
+      keys.forEach((apiKey, keyIdx) => {
+        accounts.push({
+          id: `${providerEntry.providerKey}/${merged.slug}/${keyIdx}`,
+          providerKey: providerEntry.providerKey,
+          proxyModelId: merged.slug,
+          modelId: providerEntry.modelId,
+          url: baseUrl,
+          apiKey,
+        })
+      })
+    }
+  }
+
+  return { accounts, proxyModels }
+}
+
+async function ensureProxyRunning(fcmConfig, { forceRestart = false } = {}) {
   registerExitHandlers()
   proxyCleanedUp = false
 
+  if (forceRestart && activeProxy) {
+    await cleanupProxy()
+  }
+
+  const existingStatus = activeProxy?.getStatus?.()
+  if (existingStatus?.running === true) {
+    return {
+      port: existingStatus.port,
+      accountCount: existingStatus.accountCount,
+      proxyToken: activeProxy?._proxyApiKey,
+      proxyModels: null,
+    }
+  }
+
+  const { accounts, proxyModels } = buildProxyTopologyFromConfig(fcmConfig)
+  if (accounts.length === 0) {
+    throw new Error('No API keys found for proxy-capable models')
+  }
+
   const proxyToken = `fcm_${randomUUID().replace(/-/g, '')}`
   const proxy = new ProxyServer({ accounts, proxyApiKey: proxyToken })
+  const { port } = await proxy.start()
+  activeProxy = proxy
+
+  return { port, accountCount: accounts.length, proxyToken, proxyModels }
+}
+
+async function startProxyAndLaunch(model, fcmConfig) {
   try {
-    const { port } = await proxy.start()
-    activeProxy = proxy
-    console.log(chalk.dim(`  🔀 Multi-account proxy listening on port ${port} (${accounts.length} accounts)`))
-    await startOpenCodeWithProxy(model, port, model.modelId, accounts, fcmConfig, proxyToken)
+    const started = await ensureProxyRunning(fcmConfig, { forceRestart: true })
+    const merged = mergedModelByLabel.get(model.label)
+    const defaultProxyModelId = merged?.slug ?? model.modelId
+
+    if (!started.proxyModels || Object.keys(started.proxyModels).length === 0) {
+      throw new Error('Proxy model catalog is empty')
+    }
+
+    console.log(chalk.dim(`  🔀 Multi-account proxy listening on port ${started.port} (${started.accountCount} accounts)`))
+    await startOpenCodeWithProxy(model, started.port, defaultProxyModelId, started.proxyModels, fcmConfig, started.proxyToken)
   } catch (err) {
     console.error(chalk.red(`  ✗ Proxy failed to start: ${err.message}`))
     console.log(chalk.dim('  Falling back to direct single-account flow…'))
@@ -2259,11 +2322,14 @@ async function startProxyAndLaunch(model, accounts, fcmConfig) {
 
 // 📖 startOpenCodeWithProxy: Registers fcm-proxy provider in OpenCode config,
 // 📖 spawns OpenCode with that provider, then removes the ephemeral config after exit.
-async function startOpenCodeWithProxy(model, port, proxyModelId, accounts, fcmConfig, proxyToken) {
+async function startOpenCodeWithProxy(model, port, proxyModelId, proxyModels, fcmConfig, proxyToken) {
   const config = loadOpenCodeConfig()
   if (!config.provider) config.provider = {}
   const previousProxyProvider = config.provider['fcm-proxy']
   const previousModel = config.model
+
+  const fallbackModelId = Object.keys(proxyModels)[0]
+  const selectedProxyModelId = proxyModels[proxyModelId] ? proxyModelId : fallbackModelId
 
   // 📖 Register ephemeral fcm-proxy provider pointing to our local proxy server
   config.provider['fcm-proxy'] = {
@@ -2273,19 +2339,18 @@ async function startOpenCodeWithProxy(model, port, proxyModelId, accounts, fcmCo
       baseURL: `http://127.0.0.1:${port}/v1`,
       apiKey: proxyToken
     },
-    models: {
-      [proxyModelId]: { name: model.label }
-    }
+    models: proxyModels
   }
-  config.model = `fcm-proxy/${proxyModelId}`
+  config.model = `fcm-proxy/${selectedProxyModelId}`
   saveOpenCodeConfig(config)
 
   console.log(chalk.green(`  Setting ${chalk.bold(model.label)} via proxy as default for OpenCode…`))
-  console.log(chalk.dim(`  Model: fcm-proxy/${proxyModelId}  •  Proxy: http://127.0.0.1:${port}/v1`))
+  console.log(chalk.dim(`  Model: fcm-proxy/${selectedProxyModelId}  •  Proxy: http://127.0.0.1:${port}/v1`))
+  console.log(chalk.dim(`  Catalog: ${Object.keys(proxyModels).length} models available via fcm-proxy`))
   console.log()
 
   try {
-    await spawnOpenCode(['--model', `fcm-proxy/${proxyModelId}`], 'fcm-proxy', fcmConfig)
+    await spawnOpenCode(['--model', `fcm-proxy/${selectedProxyModelId}`], 'fcm-proxy', fcmConfig)
   } finally {
     // 📖 Best-effort cleanup: restore previous fcm-proxy/model values if they existed
     try {
@@ -2969,9 +3034,9 @@ async function main() {
 
   // 📖 Load usage data from token-stats.json and attach usagePercent to each result row.
   // 📖 usagePercent is the quota percent remaining (0–100). undefined = no data available.
-  const usageSnapshot = loadUsageSnapshot()
+  // 📖 Freshness-aware: snapshots older than 30 minutes are excluded (shown as N/A in UI).
   for (const r of results) {
-    const pct = usageSnapshot.byModel[r.modelId] ?? usageSnapshot.byProvider[r.providerKey]
+    const pct = _usageForRow(r.providerKey, r.modelId)
     r.usagePercent = typeof pct === 'number' ? pct : undefined
   }
 
@@ -4477,18 +4542,18 @@ async function main() {
       if (key.ctrl && key.name === 'c') { exit(0); return }
 
        // 📖 S key: sync FCM provider entries to OpenCode config (merge, don't replace)
-       if (key.name === 's' && !key.shift && !key.ctrl) {
-         try {
-           // 📖 Only pass runtime proxy port/token when the proxy is actively running.
-           // 📖 If the proxy exists but was stopped, proxyStatus.running === false and
-           // 📖 we must NOT pass stale port/token values — fall back to existing config instead.
-           const proxyStatus = activeProxy?.getStatus?.()
-           const proxyRunning = proxyStatus?.running === true
-           const result = syncToOpenCode(state.config, sources, mergedModels, {
-             proxyPort: proxyRunning ? proxyStatus.port : undefined,
-             proxyToken: proxyRunning ? activeProxy?._proxyApiKey : undefined,
-           })
-          state.settingsSyncStatus = { type: 'success', msg: `✅ Synced ${result.providerKey} (${result.modelCount} models) to OpenCode` }
+        if (key.name === 's' && !key.shift && !key.ctrl) {
+          try {
+            // 📖 Sync now also ensures proxy is running, so OpenCode can use fcm-proxy immediately.
+            const started = await ensureProxyRunning(state.config)
+            const result = syncToOpenCode(state.config, sources, mergedModels, {
+              proxyPort: started.port,
+              proxyToken: started.proxyToken,
+            })
+            state.settingsSyncStatus = {
+              type: 'success',
+              msg: `✅ Synced ${result.providerKey} (${result.modelCount} models), proxy running on :${started.port}`,
+            }
         } catch (err) {
           state.settingsSyncStatus = { type: 'error', msg: `❌ Sync failed: ${err.message}` }
         }
@@ -4820,40 +4885,13 @@ async function main() {
       } else if (state.mode === 'opencode-desktop') {
         await startOpenCodeDesktop(userSelected, state.config)
       } else {
-         // 📖 Multi-account proxy: if the selected model is available on 2+ providers with API keys,
-         // 📖 build account list and start a rotation proxy. Fall back to direct flow if 0–1 accounts.
-         const merged = mergedModelByLabel.get(selected.label)
-         if (merged && merged.providerCount > 1) {
-           // 📖 Build accounts array: one entry per provider that has an API key configured
-           const accounts = []
-           for (const p of merged.providers) {
-             const keys = resolveApiKeys(state.config, p.providerKey)
-             const providerSource = sources[p.providerKey]
-             if (!providerSource) continue
-             // 📖 Resolve Cloudflare account_id placeholder, then strip trailing /chat/completions
-             const rawUrl = resolveCloudflareUrl(providerSource.url)
-             const baseUrl = rawUrl.replace(/\/chat\/completions$/, '')
-             // 📖 Build deterministic id: providerKey/modelId for single key,
-             // 📖 providerKey/modelId/N for multi-key providers to keep ids unique.
-             keys.forEach((key, keyIdx) => {
-               const id = keys.length === 1
-                 ? `${p.providerKey}/${p.modelId}`
-                 : `${p.providerKey}/${p.modelId}/${keyIdx}`
-               accounts.push({ id, providerKey: p.providerKey, url: baseUrl, apiKey: key, modelId: p.modelId })
-             })
-           }
-          if (accounts.length === 0) {
-            console.log(chalk.yellow(`  No API keys found for any provider of ${selected.label}. Falling back to direct flow.`))
-            console.log()
-            await startOpenCode(userSelected, state.config)
-          } else if (accounts.length === 1) {
-            // 📖 Only one usable account — skip proxy overhead, use direct flow
-            await startOpenCode(userSelected, state.config)
-          } else {
-            await startProxyAndLaunch(userSelected, accounts, state.config)
-          }
-        } else {
+        const topology = buildProxyTopologyFromConfig(state.config)
+        if (topology.accounts.length === 0) {
+          console.log(chalk.yellow(`  No API keys found for proxy model catalog. Falling back to direct flow.`))
+          console.log()
           await startOpenCode(userSelected, state.config)
+        } else {
+          await startProxyAndLaunch(userSelected, state.config)
         }
       }
       process.exit(0)
@@ -4967,11 +5005,14 @@ async function main() {
       state.lastPingTime = Date.now()
 
       // 📖 Refresh persisted usage snapshots each cycle so proxy writes appear live in table.
-      const liveUsageSnapshot = loadUsageSnapshot()
+      // 📖 Freshness-aware: stale snapshots (>30m) are excluded and row reverts to undefined.
       for (const r of state.results) {
-        const pct = liveUsageSnapshot.byModel[r.modelId] ?? liveUsageSnapshot.byProvider[r.providerKey]
+        const pct = _usageForRow(r.providerKey, r.modelId)
         if (typeof pct === 'number' && Number.isFinite(pct)) {
           r.usagePercent = pct
+        } else {
+          // If snapshot is now stale or gone, clear the cached value so UI shows N/A.
+          r.usagePercent = undefined
         }
       }
 

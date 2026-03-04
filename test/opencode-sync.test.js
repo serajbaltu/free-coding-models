@@ -279,10 +279,31 @@ describe('mergeOcConfig — fallback to existing provider options', () => {
     assert.equal(oc.provider['fcm-proxy'].options.baseURL, 'http://127.0.0.1:8045/v1')
   })
 
-  it('uses default apiKey token when no runtime token and no existing config', () => {
+  it('generates a random proxy token when no runtime token and no existing config', () => {
     const oc = {}
     mergeOcConfig(oc, mockMergedModels())
-    assert.equal(oc.provider['fcm-proxy'].options.apiKey, 'fcm-proxy-token')
+    const generated = oc.provider['fcm-proxy'].options.apiKey
+    assert.match(generated, /^fcm_[a-f0-9]{48}$/)
+  })
+
+  it('replaces legacy placeholder token with generated random token', () => {
+    const oc = {
+      provider: {
+        'fcm-proxy': {
+          options: {
+            baseURL: 'http://127.0.0.1:8045/v1',
+            apiKey: 'fcm-proxy-token',
+          },
+          models: {},
+        },
+      },
+    }
+
+    mergeOcConfig(oc, mockMergedModels())
+
+    const generated = oc.provider['fcm-proxy'].options.apiKey
+    assert.notEqual(generated, 'fcm-proxy-token')
+    assert.match(generated, /^fcm_[a-f0-9]{48}$/)
   })
 
   it('preserves extra custom options the user may have set manually', () => {
