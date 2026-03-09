@@ -98,6 +98,7 @@ import { ProxyServer } from '../src/proxy-server.js'
 import { loadOpenCodeConfig, saveOpenCodeConfig, syncToOpenCode, restoreOpenCodeBackup } from '../src/opencode-sync.js'
 import { usageForRow as _usageForRow } from '../src/usage-reader.js'
 import { loadRecentLogs } from '../src/log-reader.js'
+import { buildProviderModelTokenKey, loadTokenUsageByProviderModel } from '../src/token-usage-reader.js'
 import { parseOpenRouterResponse, fetchProviderQuota as _fetchProviderQuotaFromModule } from '../src/provider-quota-fetchers.js'
 import { isKnownQuotaTelemetry } from '../src/quota-capabilities.js'
 import { ALT_ENTER, ALT_LEAVE, ALT_HOME, PING_TIMEOUT, PING_INTERVAL, FPS, COL_MODEL, COL_MS, CELL_W, FRAMES, TIER_CYCLE, SETTINGS_OVERLAY_BG, HELP_OVERLAY_BG, RECOMMEND_OVERLAY_BG, LOG_OVERLAY_BG, OVERLAY_PANEL_WIDTH, TABLE_HEADER_LINES, TABLE_FOOTER_LINES, TABLE_FIXED_LINES, msCell, spinCell } from '../src/constants.js'
@@ -294,9 +295,11 @@ async function main() {
   // 📖 Load usage data from token-stats.json and attach usagePercent to each result row.
   // 📖 usagePercent is the quota percent remaining (0–100). undefined = no data available.
   // 📖 Freshness-aware: snapshots older than 30 minutes are excluded (shown as N/A in UI).
+  const tokenTotalsByProviderModel = loadTokenUsageByProviderModel()
   for (const r of results) {
     const pct = _usageForRow(r.providerKey, r.modelId)
     r.usagePercent = typeof pct === 'number' ? pct : undefined
+    r.totalTokens = tokenTotalsByProviderModel[buildProviderModelTokenKey(r.providerKey, r.modelId)] || 0
   }
 
   // 📖 Add interactive selection state - cursor index and user's choice

@@ -8,7 +8,7 @@
  *   with consistent alignment, colorization, and viewport clipping.
  *
  *   🎯 Key features:
- *   - Full table layout with tier, latency, stability, uptime, and usage columns
+ *   - Full table layout with tier, latency, stability, uptime, token totals, and usage columns
  *   - Hotkey-aware header lettering so highlighted letters always match live sort/filter keys
  *   - Emoji-aware padding via padEndDisplay for aligned verdict/status cells
  *   - Viewport clipping with above/below indicators
@@ -37,6 +37,7 @@ import { PING_INTERVAL, FRAMES } from './constants.js'
 import { TIER_COLOR } from './tier-colors.js'
 import { getAvg, getVerdict, getUptime, getStabilityScore } from './utils.js'
 import { usagePlaceholderForProvider } from './ping.js'
+import { formatTokenTotalCompact } from './token-usage-reader.js'
 import { calculateViewport, sortResultsWithPinnedFavorites, renderProxyStatusLine, padEndDisplay } from './render-helpers.js'
 
 const require = createRequire(import.meta.url)
@@ -152,6 +153,7 @@ export function renderTable(results, pendingPings, frame, cursor = null, sortCol
   const W_VERDICT = 14
   const W_STAB = 11
   const W_UPTIME = 6
+  const W_TOKENS = 7
   const W_USAGE = 7
 
   // 📖 Sort models using the shared helper
@@ -183,6 +185,7 @@ export function renderTable(results, pendingPings, frame, cursor = null, sortCol
   const verdictH = sortColumn === 'verdict' ? dir + ' Verdict' : 'Verdict'
   const stabH    = sortColumn === 'stability' ? dir + ' Stability' : 'Stability'
   const uptimeH  = sortColumn === 'uptime' ? dir + ' Up%' : 'Up%'
+  const tokensH  = 'Used'
   const usageH   = sortColumn === 'usage' ? dir + ' Usage' : 'Usage'
 
   // 📖 Helper to colorize first letter for keyboard shortcuts
@@ -226,6 +229,7 @@ export function renderTable(results, pendingPings, frame, cursor = null, sortCol
     const padding = ' '.repeat(Math.max(0, W_UPTIME - plain.length))
     return chalk.yellow.bold('U') + chalk.dim('p%' + padding)
   })()
+  const tokensH_c  = chalk.dim(tokensH.padEnd(W_TOKENS))
   // 📖 Usage sorts on plain G, so the highlighted letter must stay in the visible header.
   const usageH_c   = sortColumn === 'usage' ? chalk.bold.cyan(usageH.padEnd(W_USAGE)) : (() => {
     const plain = 'UsaGe'
@@ -233,8 +237,8 @@ export function renderTable(results, pendingPings, frame, cursor = null, sortCol
     return chalk.dim('Usa') + chalk.yellow.bold('G') + chalk.dim('e' + padding)
   })()
 
-  // 📖 Header with proper spacing (column order: Rank, Tier, SWE%, CTX, Model, Provider, Latest Ping, Avg Ping, Health, Verdict, Stability, Up%, Usage)
-  lines.push('  ' + rankH_c + '  ' + tierH_c + '  ' + sweH_c + '  ' + ctxH_c + '  ' + modelH_c + '  ' + originH_c + '  ' + pingH_c + '  ' + avgH_c + '  ' + healthH_c + '  ' + verdictH_c + '  ' + stabH_c + '  ' + uptimeH_c + '  ' + usageH_c)
+  // 📖 Header with proper spacing (column order: Rank, Tier, SWE%, CTX, Model, Provider, Latest Ping, Avg Ping, Health, Verdict, Stability, Up%, Used, Usage)
+  lines.push('  ' + rankH_c + '  ' + tierH_c + '  ' + sweH_c + '  ' + ctxH_c + '  ' + modelH_c + '  ' + originH_c + '  ' + pingH_c + '  ' + avgH_c + '  ' + healthH_c + '  ' + verdictH_c + '  ' + stabH_c + '  ' + uptimeH_c + '  ' + tokensH_c + '  ' + usageH_c)
 
   // 📖 Separator line
   lines.push(
@@ -251,6 +255,7 @@ export function renderTable(results, pendingPings, frame, cursor = null, sortCol
     chalk.dim('─'.repeat(W_VERDICT)) + '  ' +
     chalk.dim('─'.repeat(W_STAB)) + '  ' +
     chalk.dim('─'.repeat(W_UPTIME)) + '  ' +
+    chalk.dim('─'.repeat(W_TOKENS)) + '  ' +
     chalk.dim('─'.repeat(W_USAGE))
   )
 
@@ -365,8 +370,14 @@ export function renderTable(results, pendingPings, frame, cursor = null, sortCol
         '503': '🔒',  // Service unavailable
         '504': '⏰',  // Gateway timeout
       }
+      const errorLabels = {
+        '404': '404 NOT FOUND',
+        '410': '410 GONE',
+        '429': '429 TRY LATER',
+        '500': '500 ERROR',
+      }
       const emoji = errorEmojis[code] || '❌'
-      statusText = `${emoji} ${code}`
+      statusText = `${emoji} ${errorLabels[code] || code}`
       statusColor = (s) => chalk.red(s)
     } else {
       statusText = '?'
@@ -480,8 +491,15 @@ export function renderTable(results, pendingPings, frame, cursor = null, sortCol
         : chalk.dim(usagePlaceholder.padEnd(W_USAGE))
     }
 
-    // 📖 Build row with double space between columns (order: Rank, Tier, SWE%, CTX, Model, Provider, Latest Ping, Avg Ping, Health, Verdict, Stability, Up%, Usage)
-    const row = '  ' + num + '  ' + tier + '  ' + sweCell + '  ' + ctxCell + '  ' + nameCell + '  ' + sourceCell + '  ' + pingCell + '  ' + avgCell + '  ' + status + '  ' + speedCell + '  ' + stabCell + '  ' + uptimeCell + '  ' + usageCell
+    // 📖 Used column — total historical prompt+completion tokens consumed for this
+    // 📖 exact provider/model pair, loaded once from request-log.jsonl at startup.
+    const tokenTotal = Number(r.totalTokens) || 0
+    const tokensCell = tokenTotal > 0
+      ? chalk.rgb(120, 210, 255)(formatTokenTotalCompact(tokenTotal).padEnd(W_TOKENS))
+      : chalk.dim('0'.padEnd(W_TOKENS))
+
+    // 📖 Build row with double space between columns (order: Rank, Tier, SWE%, CTX, Model, Provider, Latest Ping, Avg Ping, Health, Verdict, Stability, Up%, Used, Usage)
+    const row = '  ' + num + '  ' + tier + '  ' + sweCell + '  ' + ctxCell + '  ' + nameCell + '  ' + sourceCell + '  ' + pingCell + '  ' + avgCell + '  ' + status + '  ' + speedCell + '  ' + stabCell + '  ' + uptimeCell + '  ' + tokensCell + '  ' + usageCell
 
     if (isCursor) {
       lines.push(chalk.bgRgb(50, 0, 60)(row))
@@ -516,7 +534,7 @@ export function renderTable(results, pendingPings, frame, cursor = null, sortCol
   // 📖 Line 1: core navigation + sorting shortcuts
   lines.push(chalk.dim(`  ↑↓ Navigate  •  `) + actionHint + chalk.dim(`  •  `) + chalk.yellow('F') + chalk.dim(` Favorite  •  R/Y/O/M/L/A/S/C/H/V/B/U/`) + chalk.yellow('G') + chalk.dim(` Sort  •  `) + chalk.yellow('T') + chalk.dim(` Tier  •  `) + chalk.yellow('D') + chalk.dim(` Provider  •  W↓/=↑ (${intervalSec}s)  •  `) + chalk.rgb(255, 100, 50).bold('Z') + chalk.dim(` Mode  •  `) + chalk.yellow('X') + chalk.dim(` Logs  •  `) + chalk.yellow('P') + chalk.dim(` Settings  •  `) + chalk.rgb(0, 255, 80).bold('K') + chalk.dim(` Help`))
   // 📖 Line 2: profiles, recommend, feature request, bug report, and extended hints — gives visibility to less-obvious features
-  lines.push(chalk.dim(`  `) + chalk.rgb(200, 150, 255).bold('⇧P') + chalk.dim(` Cycle profile  •  `) + chalk.rgb(200, 150, 255).bold('⇧S') + chalk.dim(` Save profile  •  `) + chalk.rgb(0, 200, 180).bold('Q') + chalk.dim(` Smart Recommend  •  `) + chalk.rgb(57, 255, 20).bold('J') + chalk.dim(` Request feature  •  `) + chalk.rgb(255, 87, 51).bold('I') + chalk.dim(` Report bug  •  `) + chalk.yellow('Esc') + chalk.dim(` Close overlay  •  Ctrl+C Exit`))
+  lines.push(chalk.dim(`  `) + chalk.rgb(200, 150, 255).bold('⇧P') + chalk.dim(` Cycle profile  •  `) + chalk.rgb(200, 150, 255).bold('⇧S') + chalk.dim(` Save profile  •  `) + chalk.rgb(0, 200, 180).bold('Q') + chalk.dim(` Smart Recommend  •  `) + chalk.rgb(57, 255, 20).bold('J') + chalk.dim(` Request feature  •  `) + chalk.rgb(255, 87, 51).bold('I') + chalk.dim(` Report bug  •  `) + chalk.yellow('Esc') + chalk.dim(` Close overlay`))
   // 📖 Proxy status line — always rendered with explicit state (starting/running/failed/stopped)
   lines.push(renderProxyStatusLine(proxyStartupStatus, activeProxyRef))
   lines.push(

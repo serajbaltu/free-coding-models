@@ -17,8 +17,9 @@
 
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { readFileSync, existsSync, accessSync, constants } from 'node:fs'
+import { readFileSync, existsSync, accessSync, constants, mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { join, dirname } from 'node:path'
+import { tmpdir } from 'node:os'
 import { fileURLToPath } from 'node:url'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
@@ -37,6 +38,8 @@ import {
   _emptyProfileSettings, saveAsProfile, loadProfile, listProfiles,
   deleteProfile, getActiveProfileName, setActiveProfile
 } from '../src/config.js'
+import { buildProviderModelTokenKey, loadTokenUsageByProviderModel, formatTokenTotalCompact } from '../src/token-usage-reader.js'
+import { renderTable } from '../src/render-table.js'
 
 // ─── Helper: create a mock model result ──────────────────────────────────────
 // 📖 Builds a minimal result object matching the shape used by the main script
@@ -574,6 +577,23 @@ describe('sortResults', () => {
     const sorted = sortResults(results, 'usage', 'asc')
     assert.equal(sorted[0].label, 'NoUsage')
     assert.equal(sorted[1].label, 'HasUsage')
+  })
+})
+
+describe('renderTable health labels', () => {
+  it('renders explicit labels for common HTTP failure codes', () => {
+    const results = [
+      mockResult({ label: '429 model', status: 'down', httpCode: '429', pings: [{ ms: 0, code: '429' }], providerKey: 'nvidia', totalTokens: 0 }),
+      mockResult({ label: '410 model', status: 'down', httpCode: '410', pings: [{ ms: 0, code: '410' }], providerKey: 'nvidia', totalTokens: 0 }),
+      mockResult({ label: '404 model', status: 'down', httpCode: '404', pings: [{ ms: 0, code: '404' }], providerKey: 'nvidia', totalTokens: 0 }),
+      mockResult({ label: '500 model', status: 'down', httpCode: '500', pings: [{ ms: 0, code: '500' }], providerKey: 'nvidia', totalTokens: 0 }),
+    ]
+    const output = renderTable(results, 0, 0)
+
+    assert.match(output, /429 TRY LATER/)
+    assert.match(output, /410 GONE/)
+    assert.match(output, /404 NOT FOUND/)
+    assert.match(output, /500 ERROR/)
   })
 })
 
@@ -1156,6 +1176,41 @@ describe('labelFromId', () => {
 
   it('handles ID without :free suffix', () => {
     assert.equal(labelFromId('qwen/qwen3-coder'), 'Qwen3 Coder')
+  })
+})
+
+// ─── token-usage-reader ─────────────────────────────────────────────────────
+describe('token-usage-reader', () => {
+  it('buildProviderModelTokenKey combines provider and model', () => {
+    assert.equal(buildProviderModelTokenKey('groq', 'openai/gpt-oss-120b'), 'groq::openai/gpt-oss-120b')
+  })
+
+  it('formatTokenTotalCompact renders raw, k, and M without decimals', () => {
+    assert.equal(formatTokenTotalCompact(0), '0')
+    assert.equal(formatTokenTotalCompact(999), '999')
+    assert.equal(formatTokenTotalCompact(1234), '1k')
+    assert.equal(formatTokenTotalCompact(999999), '999k')
+    assert.equal(formatTokenTotalCompact(1456789), '1M')
+  })
+
+  it('loadTokenUsageByProviderModel aggregates tokens per exact provider/model pair', () => {
+    const dir = join(tmpdir(), `fcm-token-usage-${process.pid}-${Date.now()}`)
+    mkdirSync(dir, { recursive: true })
+    const logFile = join(dir, 'request-log.jsonl')
+
+    try {
+      writeFileSync(logFile, [
+        JSON.stringify({ timestamp: new Date().toISOString(), providerKey: 'groq', modelId: 'openai/gpt-oss-120b', promptTokens: 1200, completionTokens: 300 }),
+        JSON.stringify({ timestamp: new Date().toISOString(), providerKey: 'groq', modelId: 'openai/gpt-oss-120b', promptTokens: 200, completionTokens: 100 }),
+        JSON.stringify({ timestamp: new Date().toISOString(), providerKey: 'nvidia', modelId: 'openai/gpt-oss-120b', promptTokens: 5000, completionTokens: 500 }),
+      ].join('\n') + '\n')
+
+      const totals = loadTokenUsageByProviderModel({ logFile, limit: 100 })
+      assert.equal(totals['groq::openai/gpt-oss-120b'], 1800)
+      assert.equal(totals['nvidia::openai/gpt-oss-120b'], 5500)
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
   })
 })
 

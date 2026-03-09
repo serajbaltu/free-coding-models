@@ -452,14 +452,15 @@ The main table displays one row per model with the following columns:
 | **SWE%** | `S` | SWE-bench Verified score — industry-standard for coding |
 | **CTX** | `C` | Context window size (e.g. `128k`) |
 | **Model** | `M` | Model display name (favorites show ⭐ prefix) |
-| **Origin** | `O` | Provider name (NIM, Groq, etc.) — press `N` to cycle origin filter |
+| **Provider** | `O` | Provider name (NIM, Groq, etc.) — press `D` to cycle provider filter |
 | **Latest Ping** | `L` | Most recent round-trip latency in milliseconds |
 | **Avg Ping** | `A` | Rolling average of ALL successful pings since launch |
 | **Health** | `H` | Current status: UP ✅, NO KEY 🔑, Timeout ⏳, Overloaded 🔥, Not Found 🚫 |
 | **Verdict** | `V` | Health verdict based on avg latency + stability analysis |
 | **Stability** | `B` | Composite 0–100 consistency score (see [Stability Score](#-stability-score)) |
 | **Up%** | `U` | Uptime — percentage of successful pings |
-| **Usage** | `G` | Provider-scoped quota remaining when measurable; otherwise a green dot means usage % is not applicable/reliable for that Origin |
+| **Used** | — | Total prompt+completion tokens consumed in logs for this exact provider/model pair, shown in `k` or `M` |
+| **Usage** | `G` | Provider-scoped quota remaining when measurable; otherwise a green dot means usage % is not applicable/reliable for that provider |
 
 ### Verdict values
 
@@ -825,17 +826,16 @@ This script:
 **Keyboard shortcuts (main TUI):**
 - **↑↓** — Navigate models
 - **Enter** — Select model (launches OpenCode or sets OpenClaw default, depending on mode)
-- **R/Y/S/C/M/O/L/A/H/V/B/U/G** — Sort by Rank/Tier/SWE/Ctx/Model/Origin/Latest/Avg/Health/Verdict/Stability/Up%/Usage
+- **R/Y/S/C/M/O/L/A/H/V/B/U/G** — Sort by Rank/Tier/SWE/Ctx/Model/Provider/Latest/Avg/Health/Verdict/Stability/Up%/Usage
 - **F** — Toggle favorite on selected model (⭐ in Model column, pinned at top)
 - **T** — Cycle tier filter (All → S+ → S → A+ → A → A- → B+ → B → C → All)
-- **N** — Cycle origin filter (All → NIM → Groq → ...)
+- **D** — Cycle provider filter (All → NIM → Groq → ...)
 - **Z** — Cycle mode (OpenCode CLI → OpenCode Desktop → OpenClaw)
 - **X** — **Toggle Log Viewer** (view recent activity and error logs)
 - **P** — Open Settings (manage API keys, toggles, updates, profiles)
 - **Shift+P** — Cycle through saved profiles (switches live TUI settings)
 - **Shift+S** — Save current TUI settings as a named profile (inline prompt)
 - **Q** — Open Smart Recommend overlay (find the best model for your task)
-- **E / D** — Elevate / Descend tier filter
 - **W / =** — Decrease / Increase ping interval
 - **J / I** — Request feature / Report bug
 - **K / Esc** — Show help overlay / Close overlay
