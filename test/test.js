@@ -132,6 +132,17 @@ describe('getAvg', () => {
     assert.equal(getAvg(r), 300)
   })
 
+  it('includes 401 pings because no-key responses still measure real latency', () => {
+    const r = mockResult({
+      pings: [
+        { ms: 200, code: '200' },
+        { ms: 400, code: '401' },
+        { ms: 999, code: '500' },
+      ]
+    })
+    assert.equal(getAvg(r), 300)
+  })
+
   it('rounds to integer', () => {
     const r = mockResult({
       pings: [{ ms: 333, code: '200' }, { ms: 334, code: '200' }]
@@ -174,6 +185,14 @@ describe('getVerdict', () => {
 
   it('returns Pending when no successful pings and status is up', () => {
     assert.equal(getVerdict(mockResult({ status: 'up', pings: [] })), 'Pending')
+  })
+
+  it('uses 401-only latency samples for noauth verdicts', () => {
+    assert.equal(getVerdict(mockResult({
+      status: 'noauth',
+      httpCode: '401',
+      pings: [{ ms: 350, code: '401' }]
+    })), 'Perfect')
   })
 })
 
@@ -239,6 +258,17 @@ describe('getP95', () => {
     assert.equal(getP95(r), 200)
   })
 
+  it('includes 401 pings in percentile calculations', () => {
+    const r = mockResult({
+      pings: [
+        { ms: 100, code: '401' },
+        { ms: 200, code: '200' },
+        { ms: 99999, code: '500' },
+      ]
+    })
+    assert.equal(getP95(r), 200)
+  })
+
   it('catches tail latency spikes with 20 pings', () => {
     // With 20 pings: p95 index = ceil(20 * 0.95) - 1 = 18
     // Need at least 2 high values so index 18 hits the spike
@@ -284,6 +314,17 @@ describe('getJitter', () => {
     assert.equal(getJitter(r), 0)
   })
 
+  it('includes 401 pings in jitter calculations', () => {
+    const r = mockResult({
+      pings: [
+        { ms: 100, code: '401' },
+        { ms: 300, code: '200' },
+        { ms: 99999, code: '500' },
+      ]
+    })
+    assert.equal(getJitter(r), 100)
+  })
+
   it('returns high jitter for spiky latencies', () => {
     const r = mockResult({
       pings: [
@@ -313,6 +354,18 @@ describe('getStabilityScore', () => {
     })
     const score = getStabilityScore(r)
     assert.ok(score >= 80, `Expected high stability score, got ${score}`)
+  })
+
+  it('computes a stability score from 401 latency samples too', () => {
+    const score = getStabilityScore(mockResult({
+      status: 'noauth',
+      pings: [
+        { ms: 200, code: '401' },
+        { ms: 220, code: '401' },
+        { ms: 210, code: '401' },
+      ]
+    }))
+    assert.ok(score >= 0 && score <= 100, `Score should be 0-100, got ${score}`)
   })
 
   it('returns low score for spiky model', () => {

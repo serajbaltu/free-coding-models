@@ -7,6 +7,7 @@
 ### Added
 
 - ✅ Added a new `Used` column showing total consumed prompt+completion tokens per exact `provider + model`, formatted in compact `k` / `M` units from startup log aggregation.
+- 🌀 Added an inline spinner beside `Latest Ping` so each row shows when a fresh ping is still in flight without hiding the previous latency.
 
 ### Fixed
 
@@ -16,6 +17,7 @@
 - 🟢 Show a green dot in `Usage` when quota telemetry is not applicable or not reliable for a provider instead of displaying misleading percentages.
 - 🔤 Shortened Alibaba Cloud (DashScope) to `Alibaba` in the main TUI table to avoid layout drift while keeping the full name in Settings.
 - 🩺 Expanded `Health` labels for common errors: `429 TRY LATER`, `410 GONE`, `404 NOT FOUND`, `500 ERROR`.
+- 🔑 `Avg Ping` and latency-derived metrics now also use `401` responses, so rows without an API key still accumulate real latency samples.
 
 ### Changed
 

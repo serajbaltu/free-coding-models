@@ -503,7 +503,7 @@ export function createKeyHandler(ctx) {
             // 📖 Try to reuse existing result to keep ping history
             const existing = state.results.find(r => r.modelId === modelId && r.providerKey === providerKey)
             if (existing) return existing
-            return { idx: i + 1, modelId, label, tier, sweScore, ctx, providerKey, status: 'pending', pings: [], httpCode: null, hidden: false }
+            return { idx: i + 1, modelId, label, tier, sweScore, ctx, providerKey, status: 'pending', pings: [], httpCode: null, isPinging: false, hidden: false }
           })
         // 📖 Re-index results
         nextResults.forEach((r, i) => { r.idx = i + 1 })
@@ -524,6 +524,7 @@ export function createKeyHandler(ctx) {
               r.status = 'pending'
               r.pings = []
               r.httpCode = null
+              r.isPinging = false
               pingModel(r).catch(() => {})
             }
           })

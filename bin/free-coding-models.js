@@ -288,6 +288,7 @@ async function main() {
       status: 'pending',
       pings: [],  // 📖 All ping results (ms or 'TIMEOUT')
       httpCode: null,
+      isPinging: false, // 📖 Per-row live flag so Latest Ping can keep last value and show a spinner during refresh.
       hidden: false,  // 📖 Simple flag to hide/show models
     }))
   syncFavoriteFlags(results, config)
@@ -593,45 +594,53 @@ async function main() {
   // 📖 Uses per-provider API key and URL from sources.js
   // 📖 If no API key is configured, pings without auth — a 401 still tells us latency + server is up
   pingModel = async (r) => {
-    const providerApiKey = getApiKey(state.config, r.providerKey) ?? null
-    const providerUrl = sources[r.providerKey]?.url ?? sources.nvidia.url
-    let { code, ms, quotaPercent } = await ping(providerApiKey, r.modelId, r.providerKey, providerUrl)
+    state.pendingPings += 1
+    r.isPinging = true
 
-    if ((quotaPercent === null || quotaPercent === undefined) && providerApiKey) {
-      const providerQuota = await getProviderQuotaPercentCached(r.providerKey, providerApiKey)
-      if (typeof providerQuota === 'number' && Number.isFinite(providerQuota)) {
-        quotaPercent = providerQuota
-      }
-    }
+    try {
+      const providerApiKey = getApiKey(state.config, r.providerKey) ?? null
+      const providerUrl = sources[r.providerKey]?.url ?? sources.nvidia.url
+      let { code, ms, quotaPercent } = await ping(providerApiKey, r.modelId, r.providerKey, providerUrl)
 
-    // 📖 Store ping result as object with ms and code
-    // 📖 ms = actual response time (even for errors like 429)
-    // 📖 code = HTTP status code ('200', '429', '500', '000' for timeout)
-    r.pings.push({ ms, code })
-
-    // 📖 Update status based on latest ping
-    if (code === '200') {
-      r.status = 'up'
-    } else if (code === '000') {
-      r.status = 'timeout'
-    } else if (code === '401') {
-      // 📖 401 = server is reachable but no API key set (or wrong key)
-      // 📖 Treated as 'noauth' — server is UP, latency is real, just needs a key
-      r.status = 'noauth'
-      r.httpCode = code
-    } else {
-      r.status = 'down'
-      r.httpCode = code
-    }
-
-    if (typeof quotaPercent === 'number' && Number.isFinite(quotaPercent)) {
-      r.usagePercent = quotaPercent
-      // Provider-level fallback: apply latest known quota to sibling rows on same provider.
-      for (const sibling of state.results) {
-        if (sibling.providerKey === r.providerKey && (sibling.usagePercent === undefined || sibling.usagePercent === null)) {
-          sibling.usagePercent = quotaPercent
+      if ((quotaPercent === null || quotaPercent === undefined) && providerApiKey) {
+        const providerQuota = await getProviderQuotaPercentCached(r.providerKey, providerApiKey)
+        if (typeof providerQuota === 'number' && Number.isFinite(providerQuota)) {
+          quotaPercent = providerQuota
         }
       }
+
+      // 📖 Store ping result as object with ms and code
+      // 📖 ms = actual response time (even for errors like 429)
+      // 📖 code = HTTP status code ('200', '429', '500', '000' for timeout)
+      r.pings.push({ ms, code })
+
+      // 📖 Update status based on latest ping
+      if (code === '200') {
+        r.status = 'up'
+      } else if (code === '000') {
+        r.status = 'timeout'
+      } else if (code === '401') {
+        // 📖 401 = server is reachable but no API key set (or wrong key)
+        // 📖 Treated as 'noauth' — server is UP, latency is real, just needs a key
+        r.status = 'noauth'
+        r.httpCode = code
+      } else {
+        r.status = 'down'
+        r.httpCode = code
+      }
+
+      if (typeof quotaPercent === 'number' && Number.isFinite(quotaPercent)) {
+        r.usagePercent = quotaPercent
+        // Provider-level fallback: apply latest known quota to sibling rows on same provider.
+        for (const sibling of state.results) {
+          if (sibling.providerKey === r.providerKey && (sibling.usagePercent === undefined || sibling.usagePercent === null)) {
+            sibling.usagePercent = quotaPercent
+          }
+        }
+      }
+    } finally {
+      r.isPinging = false
+      state.pendingPings = Math.max(0, state.pendingPings - 1)
     }
   }
 

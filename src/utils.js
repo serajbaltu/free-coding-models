@@ -74,18 +74,23 @@ export const TIER_LETTER_MAP = {
 
 // ─── Core Logic Functions ────────────────────────────────────────────────────
 
-// 📖 getAvg: Calculate average latency from ONLY successful pings (HTTP 200).
-// 📖 Failed pings (timeouts, 429s, 500s) are excluded to avoid skewing the average.
-// 📖 Returns Infinity when no successful pings exist — this sorts "unknown" models to the bottom.
+// 📖 measureablePingCodes: HTTP codes that still give us a real round-trip latency sample.
+// 📖 200 = normal success, 401 = no key / bad key but the provider endpoint is reachable.
+const measurablePingCodes = new Set(['200', '401'])
+
+// 📖 getAvg: Calculate average latency from pings that produced a real latency sample.
+// 📖 HTTP 200 and 401 both count because a 401 still proves the endpoint responded in X ms.
+// 📖 Timeouts and server failures are excluded to avoid mixing availability with raw latency.
+// 📖 Returns Infinity when no measurable pings exist — this sorts "unknown" models to the bottom.
 // 📖 The rounding to integer avoids displaying fractional milliseconds in the TUI.
 //
 // 📖 Example:
-//   pings = [{ms: 200, code: '200'}, {ms: 0, code: '429'}, {ms: 400, code: '200'}]
-//   → getAvg returns 300 (only the two 200s count: (200+400)/2)
+//   pings = [{ms: 200, code: '200'}, {ms: 320, code: '401'}, {ms: 999, code: '500'}]
+//   → getAvg returns 260 (only the measurable pings count: (200+320)/2)
 export const getAvg = (r) => {
-  const successfulPings = (r.pings || []).filter(p => p.code === '200')
-  if (successfulPings.length === 0) return Infinity
-  return Math.round(successfulPings.reduce((a, b) => a + b.ms, 0) / successfulPings.length)
+  const measurablePings = (r.pings || []).filter(p => measurablePingCodes.has(p.code))
+  if (measurablePings.length === 0) return Infinity
+  return Math.round(measurablePings.reduce((a, b) => a + b.ms, 0) / measurablePings.length)
 }
 
 // 📖 getVerdict: Determine a human-readable health verdict for a model.
@@ -120,16 +125,16 @@ export const getVerdict = (r) => {
   if (avg === Infinity) return 'Pending'
 
   // 📖 Stability-aware verdict: penalize models with good avg but terrible tail latency
-  const successfulPings = (r.pings || []).filter(p => p.code === '200')
+  const measurablePings = (r.pings || []).filter(p => measurablePingCodes.has(p.code))
   const p95 = getP95(r)
 
   if (avg < 400) {
     // 📖 Only flag as "Spiky" when we have enough data (≥3 pings) to judge stability
-    if (successfulPings.length >= 3 && p95 > 3000) return 'Spiky'
+    if (measurablePings.length >= 3 && p95 > 3000) return 'Spiky'
     return 'Perfect'
   }
   if (avg < 1000) {
-    if (successfulPings.length >= 3 && p95 > 5000) return 'Spiky'
+    if (measurablePings.length >= 3 && p95 > 5000) return 'Spiky'
     return 'Normal'
   }
   if (avg < 3000) return 'Slow'
@@ -148,30 +153,30 @@ export const getUptime = (r) => {
   return Math.round((successful / r.pings.length) * 100)
 }
 
-// 📖 getP95: Calculate the 95th percentile latency from successful pings (HTTP 200).
+// 📖 getP95: Calculate the 95th percentile latency from measurable pings (HTTP 200/401).
 // 📖 The p95 answers: "95% of requests are faster than this value."
 // 📖 A low p95 means consistently fast responses — a high p95 signals tail-latency spikes.
-// 📖 Returns Infinity when no successful pings exist.
+// 📖 Returns Infinity when no measurable pings exist.
 //
 // 📖 Algorithm: sort latencies ascending, pick the value at ceil(N * 0.95) - 1.
 // 📖 Example: [100, 200, 300, 400, 5000] → p95 index = ceil(5 * 0.95) - 1 = 4 → 5000ms
 export const getP95 = (r) => {
-  const successfulPings = (r.pings || []).filter(p => p.code === '200')
-  if (successfulPings.length === 0) return Infinity
-  const sorted = successfulPings.map(p => p.ms).sort((a, b) => a - b)
+  const measurablePings = (r.pings || []).filter(p => measurablePingCodes.has(p.code))
+  if (measurablePings.length === 0) return Infinity
+  const sorted = measurablePings.map(p => p.ms).sort((a, b) => a - b)
   const idx = Math.ceil(sorted.length * 0.95) - 1
   return sorted[Math.max(0, idx)]
 }
 
-// 📖 getJitter: Calculate latency standard deviation (σ) from successful pings.
+// 📖 getJitter: Calculate latency standard deviation (σ) from measurable pings.
 // 📖 Low jitter = predictable response times. High jitter = erratic, spiky latency.
-// 📖 Returns 0 when fewer than 2 successful pings (can't compute variance from 1 point).
+// 📖 Returns 0 when fewer than 2 measurable pings (can't compute variance from 1 point).
 // 📖 Uses population σ (divides by N, not N-1) since we have ALL the data, not a sample.
 export const getJitter = (r) => {
-  const successfulPings = (r.pings || []).filter(p => p.code === '200')
-  if (successfulPings.length < 2) return 0
-  const mean = successfulPings.reduce((a, b) => a + b.ms, 0) / successfulPings.length
-  const variance = successfulPings.reduce((sum, p) => sum + (p.ms - mean) ** 2, 0) / successfulPings.length
+  const measurablePings = (r.pings || []).filter(p => measurablePingCodes.has(p.code))
+  if (measurablePings.length < 2) return 0
+  const mean = measurablePings.reduce((a, b) => a + b.ms, 0) / measurablePings.length
+  const variance = measurablePings.reduce((sum, p) => sum + (p.ms - mean) ** 2, 0) / measurablePings.length
   return Math.round(Math.sqrt(variance))
 }
 
@@ -190,14 +195,14 @@ export const getJitter = (r) => {
 //   Model B: avg 400ms, p95 650ms (boringly consistent) → score ~85
 //   In real usage, Model B FEELS faster because it doesn't randomly stall.
 export const getStabilityScore = (r) => {
-  const successfulPings = (r.pings || []).filter(p => p.code === '200')
-  if (successfulPings.length === 0) return -1
+  const measurablePings = (r.pings || []).filter(p => measurablePingCodes.has(p.code))
+  if (measurablePings.length === 0) return -1
 
   const p95 = getP95(r)
   const jitter = getJitter(r)
   const uptime = getUptime(r)
-  const spikeCount = successfulPings.filter(p => p.ms > 3000).length
-  const spikeRate = spikeCount / successfulPings.length
+  const spikeCount = measurablePings.filter(p => p.ms > 3000).length
+  const spikeRate = spikeCount / measurablePings.length
 
   // 📖 Normalize each component to 0–100 (higher = better)
   const p95Score = Math.max(0, Math.min(100, 100 * (1 - p95 / 5000)))

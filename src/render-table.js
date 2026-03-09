@@ -315,22 +315,30 @@ export function renderTable(results, pendingPings, frame, cursor = null, sortCol
       ? chalk.cyan(ctxRaw.padEnd(W_CTX))
       : chalk.dim(ctxRaw.padEnd(W_CTX))
 
+    // 📖 Keep the row-local spinner small and inline so users can still read the last measured latency.
+    const buildLatestPingDisplay = (value) => {
+      const spinner = r.isPinging ? ` ${FRAMES[frame % FRAMES.length]}` : ''
+      return `${value}${spinner}`.padEnd(W_PING)
+    }
+
     // 📖 Latest ping - pings are objects: { ms, code }
     // 📖 Show response time for 200 (success) and 401 (no-auth but server is reachable)
     const latestPing = r.pings.length > 0 ? r.pings[r.pings.length - 1] : null
     let pingCell
     if (!latestPing) {
-      pingCell = chalk.dim('———'.padEnd(W_PING))
+      const placeholder = r.isPinging ? buildLatestPingDisplay('———') : '———'.padEnd(W_PING)
+      pingCell = chalk.dim(placeholder)
     } else if (latestPing.code === '200') {
       // 📖 Success - show response time
-      const str = String(latestPing.ms).padEnd(W_PING)
+      const str = buildLatestPingDisplay(String(latestPing.ms))
       pingCell = latestPing.ms < 500 ? chalk.greenBright(str) : latestPing.ms < 1500 ? chalk.yellow(str) : chalk.red(str)
     } else if (latestPing.code === '401') {
       // 📖 401 = no API key but server IS reachable — still show latency in dim
-      pingCell = chalk.dim(String(latestPing.ms).padEnd(W_PING))
+      pingCell = chalk.dim(buildLatestPingDisplay(String(latestPing.ms)))
     } else {
       // 📖 Error or timeout - show "———" (error code is already in Status column)
-      pingCell = chalk.dim('———'.padEnd(W_PING))
+      const placeholder = r.isPinging ? buildLatestPingDisplay('———') : '———'.padEnd(W_PING)
+      pingCell = chalk.dim(placeholder)
     }
 
     // 📖 Avg ping (just number, no "ms")
