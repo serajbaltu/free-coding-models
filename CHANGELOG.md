@@ -2,6 +2,14 @@
 
 ---
 
+## 0.2.6
+
+### Added
+
+- 🔌 Added `terminalcp` MCP server configuration for Claude Code to spawn and interact with the TUI headlessly. Agents can now visually test the terminal interface by capturing output and sending keystrokes programmatically. See AGENTS.md → "Testing the TUI with terminalcp" for usage.
+
+---
+
 ## 0.2.5
 
 ### Fixed

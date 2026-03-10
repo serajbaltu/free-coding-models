@@ -1,0 +1,10 @@
+{
+  "description": "Local MCP server configuration for free-coding-models TUI testing",
+  "mcpServers": {
+    "terminalcp": {
+      "command": "pnpm",
+      "args": ["dlx", "@mariozechner/terminalcp", "--mcp"]
+    }
+  },
+  "note": "This configuration allows Claude Code to spawn and interact with the TUI for visual testing. Add this to ~/.claude/settings.json under 'mcpServers' or use 'pnpm dlx' to run without global installation."
+}
