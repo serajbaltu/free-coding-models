@@ -362,8 +362,8 @@ async function main() {
     frame: 0,
     cursor: 0,
     selectedModel: null,
-    sortColumn: startupProfileSettings?.sortColumn || 'avg',
-    sortDirection: startupProfileSettings?.sortAsc === false ? 'desc' : 'asc',
+    sortColumn: startupProfileSettings?.sortColumn ?? config.settings?.sortColumn ?? 'avg',
+    sortDirection: (startupProfileSettings?.sortAsc ?? config.settings?.sortAsc ?? true) ? 'asc' : 'desc',
     pingInterval: PING_MODE_INTERVALS.speed, // 📖 Effective live interval derived from the active ping mode.
     pingMode: 'speed',            // 📖 Current ping mode: speed | normal | slow | forced.
     pingModeSource: 'startup',    // 📖 Why this mode is active: startup | manual | auto | idle | activity.
@@ -612,8 +612,10 @@ async function main() {
 
   // 📖 originFilterMode: index into ORIGIN_CYCLE, 0=All, then each provider key in order
   const ORIGIN_CYCLE = [null, ...Object.keys(sources)]
-  state.tierFilterMode = startupProfileSettings?.tierFilter ? Math.max(0, TIER_CYCLE.indexOf(startupProfileSettings.tierFilter)) : 0
-  state.originFilterMode = 0
+  const resolvedTierFilter = startupProfileSettings?.tierFilter ?? config.settings?.tierFilter
+  state.tierFilterMode = resolvedTierFilter ? Math.max(0, TIER_CYCLE.indexOf(resolvedTierFilter)) : 0
+  const resolvedOriginFilter = config.settings?.originFilter
+  state.originFilterMode = resolvedOriginFilter ? Math.max(0, ORIGIN_CYCLE.indexOf(resolvedOriginFilter)) : 0
 
   function applyTierFilter() {
     const activeTier = TIER_CYCLE[state.tierFilterMode]

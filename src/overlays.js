@@ -140,6 +140,7 @@ export function createOverlayRenderers(state, deps) {
     const proxySyncRowIdx = updateRowIdx + 2
     const proxyPortRowIdx = updateRowIdx + 3
     const proxyCleanupRowIdx = updateRowIdx + 4
+    const changelogViewRowIdx = updateRowIdx + 5
     const proxySettings = getProxySettings(state.config)
     const EL = '\x1b[K'
     const lines = []
@@ -298,9 +299,15 @@ export function createOverlayRenderers(state, deps) {
     cursorLineByRow[proxyCleanupRowIdx] = lines.length
     lines.push(state.settingsCursor === proxyCleanupRowIdx ? chalk.bgRgb(45, 30, 30)(proxyCleanupRow) : proxyCleanupRow)
 
+    // 📖 Changelog viewer row
+    const changelogViewBullet = state.settingsCursor === changelogViewRowIdx ? chalk.bold.cyan('  ❯ ') : chalk.dim('    ')
+    const changelogViewRow = `${changelogViewBullet}${chalk.bold('View Changelog').padEnd(44)} ${chalk.dim('Enter browse version history')}`
+    cursorLineByRow[changelogViewRowIdx] = lines.length
+    lines.push(state.settingsCursor === changelogViewRowIdx ? chalk.bgRgb(30, 45, 30)(changelogViewRow) : changelogViewRow)
+
     // 📖 Profiles section — list saved profiles with active indicator + delete support
     const savedProfiles = listProfiles(state.config)
-    const profileStartIdx = updateRowIdx + 5
+    const profileStartIdx = updateRowIdx + 6
     const maxRowIdx = savedProfiles.length > 0 ? profileStartIdx + savedProfiles.length - 1 : updateRowIdx
 
     lines.push('')
@@ -612,6 +619,7 @@ export function createOverlayRenderers(state, deps) {
     lines.push(`  ${chalk.yellow('Shift+S')}  Save current config as a named profile  ${chalk.dim('(inline prompt — type name + Enter)')}`)
     lines.push(`             ${chalk.dim('Profiles store: favorites, sort, tier filter, ping interval, configured-only filter, API keys.')}`)
     lines.push(`             ${chalk.dim('Use --profile <name> to load a profile on startup.')}`)
+    lines.push(`  ${chalk.yellow('Shift+R')}  Reset view settings  ${chalk.dim('(tier filter, sort, provider filter → defaults)')}`)
     lines.push(`  ${chalk.yellow('N')}  Changelog  ${chalk.dim('(📋 browse all versions, Enter to view details)')}`)
     lines.push(`  ${chalk.yellow('K')} / ${chalk.yellow('Esc')}  Show/hide this help`)
     lines.push(`  ${chalk.yellow('Ctrl+C')}  Exit`)

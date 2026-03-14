@@ -2,6 +2,14 @@
 
 ---
 
+## 0.2.13
+
+### Added
+- **Persist UI view settings**: Tier filter (T key), provider filter (D key), and sort order now persist across session restarts — settings are saved to `config.settings` and restored on startup
+- **Reset view settings (Shift+R)**: New keyboard shortcut to reset tier filter, provider filter, and sort order back to defaults (All tier, no provider filter, avg sort ascending)
+
+---
+
 ## 0.2.12
 
 ### Added

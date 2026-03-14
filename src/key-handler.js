@@ -948,10 +948,11 @@ export function createKeyHandler(ctx) {
       const proxySyncRowIdx = updateRowIdx + 2
       const proxyPortRowIdx = updateRowIdx + 3
       const proxyCleanupRowIdx = updateRowIdx + 4
-      // 📖 Profile rows start after maintenance + proxy rows — one row per saved profile
+      const changelogViewRowIdx = updateRowIdx + 5
+      // 📖 Profile rows start after maintenance + proxy rows + changelog row — one row per saved profile
       const savedProfiles = listProfiles(state.config)
-      const profileStartIdx = updateRowIdx + 5
-      const maxRowIdx = savedProfiles.length > 0 ? profileStartIdx + savedProfiles.length - 1 : proxyCleanupRowIdx
+      const profileStartIdx = updateRowIdx + 6
+      const maxRowIdx = savedProfiles.length > 0 ? profileStartIdx + savedProfiles.length - 1 : changelogViewRowIdx
 
       // 📖 Edit/Add-key mode: capture typed characters for the API key
       if (state.settingsEditMode || state.settingsAddKeyMode) {
@@ -1125,6 +1126,17 @@ export function createKeyHandler(ctx) {
           return
         }
 
+        // 📖 Changelog row: Enter → open changelog overlay
+        if (state.settingsCursor === changelogViewRowIdx) {
+          state.settingsOpen = false
+          state.changelogOpen = true
+          state.changelogPhase = 'index'
+          state.changelogCursor = 0
+          state.changelogSelectedVersion = null
+          state.changelogScrollOffset = 0
+          return
+        }
+
         // 📖 Profile row: Enter → load the selected profile (apply its settings live)
         if (state.settingsCursor >= profileStartIdx && savedProfiles.length > 0) {
           const profileIdx = state.settingsCursor - profileStartIdx
@@ -1160,7 +1172,7 @@ export function createKeyHandler(ctx) {
       }
 
       if (key.name === 'space') {
-        if (state.settingsCursor === updateRowIdx || state.settingsCursor === proxyPortRowIdx || state.settingsCursor === proxyCleanupRowIdx) return
+        if (state.settingsCursor === updateRowIdx || state.settingsCursor === proxyPortRowIdx || state.settingsCursor === proxyCleanupRowIdx || state.settingsCursor === changelogViewRowIdx) return
         // 📖 Profile rows don't respond to Space
         if (state.settingsCursor >= profileStartIdx) return
 
@@ -1191,7 +1203,7 @@ export function createKeyHandler(ctx) {
       }
 
       if (key.name === 't') {
-        if (state.settingsCursor === updateRowIdx) return
+        if (state.settingsCursor === updateRowIdx || state.settingsCursor === proxyPortRowIdx || state.settingsCursor === proxyCleanupRowIdx || state.settingsCursor === changelogViewRowIdx) return
         // 📖 Profile rows don't respond to T (test key)
         if (state.settingsCursor >= profileStartIdx) return
 
@@ -1399,9 +1411,60 @@ export function createKeyHandler(ctx) {
       return
     }
 
+    // 📖 Helper: persist current UI view settings (tier, provider, sort) to config.settings
+    // 📖 Called after every T / D / sort key so preferences survive session restarts.
+    function persistUiSettings() {
+      if (!state.config.settings || typeof state.config.settings !== 'object') state.config.settings = {}
+      state.config.settings.tierFilter = TIER_CYCLE[state.tierFilterMode]
+      state.config.settings.originFilter = ORIGIN_CYCLE[state.originFilterMode] ?? null
+      state.config.settings.sortColumn = state.sortColumn
+      state.config.settings.sortAsc = state.sortDirection === 'asc'
+      // 📖 Mirror into active profile too so profile captures live preferences
+      if (state.activeProfile && state.config.profiles?.[state.activeProfile]) {
+        const profile = state.config.profiles[state.activeProfile]
+        if (!profile.settings || typeof profile.settings !== 'object') profile.settings = {}
+        profile.settings.tierFilter = state.config.settings.tierFilter
+        profile.settings.originFilter = state.config.settings.originFilter
+        profile.settings.sortColumn = state.config.settings.sortColumn
+        profile.settings.sortAsc = state.config.settings.sortAsc
+      }
+      saveConfig(state.config)
+    }
+
+    // 📖 Shift+R: reset all UI view settings to defaults (tier, sort, provider) and clear persisted config
+    if (key.name === 'r' && key.shift) {
+      state.tierFilterMode = 0
+      state.originFilterMode = 0
+      state.sortColumn = 'avg'
+      state.sortDirection = 'asc'
+      if (!state.config.settings || typeof state.config.settings !== 'object') state.config.settings = {}
+      delete state.config.settings.tierFilter
+      delete state.config.settings.originFilter
+      delete state.config.settings.sortColumn
+      delete state.config.settings.sortAsc
+      // 📖 Also clear in active profile if loaded
+      if (state.activeProfile && state.config.profiles?.[state.activeProfile]) {
+        const profile = state.config.profiles[state.activeProfile]
+        if (profile.settings) {
+          delete profile.settings.tierFilter
+          delete profile.settings.originFilter
+          delete profile.settings.sortColumn
+          delete profile.settings.sortAsc
+        }
+      }
+      saveConfig(state.config)
+      applyTierFilter()
+      const visible = state.results.filter(r => !r.hidden)
+      state.visibleSorted = sortResultsWithPinnedFavorites(visible, state.sortColumn, state.sortDirection)
+      state.cursor = 0
+      state.scrollOffset = 0
+      return
+    }
+
     // 📖 Sorting keys: R=rank, O=origin, M=model, L=latest ping, A=avg ping, S=SWE-bench, C=context, H=health, V=verdict, B=stability, U=uptime, G=usage
     // 📖 T is reserved for tier filter cycling. Y now opens the install-endpoints flow.
     // 📖 D is now reserved for provider filter cycling
+    // 📖 Shift+R is reserved for reset view settings
     const sortKeys = {
       'r': 'rank', 'o': 'origin', 'm': 'model',
       'l': 'ping', 'a': 'avg', 's': 'swe', 'c': 'ctx', 'h': 'condition', 'v': 'verdict', 'b': 'stability', 'u': 'uptime', 'g': 'usage'
@@ -1421,6 +1484,7 @@ export function createKeyHandler(ctx) {
       state.visibleSorted = sortResultsWithPinnedFavorites(visible, state.sortColumn, state.sortDirection)
       state.cursor = 0
       state.scrollOffset = 0
+      persistUiSettings()
       return
     }
 
@@ -1506,6 +1570,7 @@ export function createKeyHandler(ctx) {
       state.visibleSorted = sortResultsWithPinnedFavorites(visible, state.sortColumn, state.sortDirection)
       state.cursor = 0
       state.scrollOffset = 0
+      persistUiSettings()
       return
     }
 
@@ -1518,6 +1583,7 @@ export function createKeyHandler(ctx) {
       state.visibleSorted = sortResultsWithPinnedFavorites(visible, state.sortColumn, state.sortDirection)
       state.cursor = 0
       state.scrollOffset = 0
+      persistUiSettings()
       return
     }
 

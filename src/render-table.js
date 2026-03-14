@@ -672,6 +672,8 @@ export function renderTable(results, pendingPings, frame, cursor = null, sortCol
       chalk.dim(' → ') +
       chalk.rgb(200, 150, 255)('https://discord.gg/ZTNFHvvCkU') +
       chalk.dim('  •  ') +
+      chalk.yellow('N') + chalk.dim(' Changelog') +
+      chalk.dim('  •  ') +
       chalk.dim('Ctrl+C Exit')
   }
   lines.push(footerLine)
