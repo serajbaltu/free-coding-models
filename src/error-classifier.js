@@ -72,8 +72,11 @@ export function classifyError(statusCode, body, headers) {
     return { type: ErrorType.NETWORK_ERROR, retryAfterSec: 5, shouldRetry: true, skipAccount: false }
   }
 
+  // 📖 401/403 from upstream providers: skip this account and try the next one.
+  // 📖 A provider may reject a valid key for specific models (e.g. nvidia 403 on gpt-oss-120b)
+  // 📖 while another provider with the same proxyModelId may accept it.
   if (statusCode === 401 || statusCode === 403) {
-    return { type: ErrorType.AUTH_ERROR, retryAfterSec: null, shouldRetry: false, skipAccount: true }
+    return { type: ErrorType.AUTH_ERROR, retryAfterSec: null, shouldRetry: true, skipAccount: true }
   }
 
   // Provider-level 404/410: model not found / inaccessible / not deployed on this account.

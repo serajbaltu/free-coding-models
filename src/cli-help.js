@@ -37,7 +37,7 @@ const ANALYSIS_FLAGS = [
 ]
 
 const CONFIG_FLAGS = [
-  { flag: '--profile <name>', description: 'Load a saved config profile before startup' },
+  { flag: '--proxy', description: 'Start FCM Proxy V2 in foreground with live dashboard (no daemon)' },
   { flag: '--no-telemetry', description: 'Disable anonymous telemetry for this run' },
   { flag: '--clean-proxy, --proxy-clean', description: 'Remove persisted fcm-proxy config from OpenCode' },
   { flag: '--help, -h', description: 'Print this help and exit' },

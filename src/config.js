@@ -59,7 +59,7 @@
  *       "consentVersion": 1,
  *       "anonymousId": "anon_550e8400-e29b-41d4-a716-446655440000"
  *     },
- *     "activeProfile": "work",
+
  *     "profiles": {
  *       "work":     { "apiKeys": {...}, "providers": {...}, "favorites": [...], "settings": {...} },
  *       "personal": { "apiKeys": {...}, "providers": {...}, "favorites": [...], "settings": {...} },
@@ -70,15 +70,7 @@
  *     ]
  *   }
  *
- * 📖 Profiles store a snapshot of the user's configuration. Each profile contains:
- *   - apiKeys: API keys per provider (can differ between work/personal setups)
- *   - providers: enabled/disabled state per provider
- *   - favorites: list of pinned favorite models
- *   - settings: extra TUI preferences (tierFilter, sortColumn, sortAsc, pingInterval, hideUnconfiguredModels, preferredToolMode, proxy)
- *
- * 📖 When a profile is loaded via --profile <name> or Shift+P, the main config's
- *    apiKeys/providers/favorites are replaced with the profile's values. The profile
- *    data itself stays in the profiles section — it's a named snapshot, not a fork.
+
  *
  * 📖 Migration: On first run, if the old plain-text ~/.free-coding-models exists
  *    and the new JSON file does not, the old key is auto-migrated as the nvidia key.
@@ -95,21 +87,14 @@
  *   → buildPersistedConfig(incomingConfig, diskConfig, options?) — Merge a live snapshot with the latest disk state safely
  *   → replaceConfigContents(targetConfig, nextConfig) — Refresh an in-memory config object from a normalized snapshot
  *   → persistApiKeysForProvider(config, providerKey) — Persist one provider's API keys without clobbering the rest of the file
- *   → saveAsProfile(config, name) — Snapshot current apiKeys/providers/favorites/settings into a named profile
- *   → loadProfile(config, name) — Apply a named profile's values onto the live config
- *   → listProfiles(config) — Return array of profile names
- *   → deleteProfile(config, name) — Remove a named profile
- *   → getActiveProfileName(config) — Get the currently active profile name (or null)
- *   → setActiveProfile(config, name) — Set which profile is active (null to clear)
- *   → _emptyProfileSettings() — Default TUI settings for a profile
+
  *   → getProxySettings(config) — Return normalized proxy settings from config
  *   → setClaudeProxyModelRouting(config, modelId) — Mirror free-claude-code MODEL/MODEL_* routing onto one selected FCM model
  *   → normalizeEndpointInstalls(endpointInstalls) — Keep tracked endpoint installs stable across app versions
  *
  * @exports loadConfig, saveConfig, validateConfigFile, getApiKey, isProviderEnabled
  * @exports addApiKey, removeApiKey, listApiKeys — multi-key management helpers
- * @exports saveAsProfile, loadProfile, listProfiles, deleteProfile
- * @exports getActiveProfileName, setActiveProfile, getProxySettings, setClaudeProxyModelRouting, normalizeEndpointInstalls
+ * @exports getProxySettings, setClaudeProxyModelRouting, normalizeEndpointInstalls
  * @exports buildPersistedConfig, replaceConfigContents, persistApiKeysForProvider
  * @exports CONFIG_PATH — path to the JSON config file
  *
@@ -254,20 +239,7 @@ function normalizeProfileSettings(settings) {
   }
 }
 
-function normalizeProfilesSection(profiles) {
-  if (!isPlainObject(profiles)) return {}
-  const normalized = {}
-  for (const [profileName, profile] of Object.entries(profiles)) {
-    if (!isPlainObject(profile)) continue
-    normalized[profileName] = {
-      apiKeys: normalizeApiKeysSection(profile.apiKeys),
-      providers: normalizeProvidersSection(profile.providers),
-      favorites: normalizeFavoriteList(profile.favorites),
-      settings: normalizeProfileSettings(profile.settings),
-    }
-  }
-  return normalized
-}
+
 
 function normalizeConfigShape(config) {
   const safeConfig = isPlainObject(config) ? config : {}
@@ -278,10 +250,8 @@ function normalizeConfigShape(config) {
     favorites: normalizeFavoriteList(safeConfig.favorites),
     telemetry: normalizeTelemetrySection(safeConfig.telemetry),
     endpointInstalls: normalizeEndpointInstalls(safeConfig.endpointInstalls),
-    activeProfile: typeof safeConfig.activeProfile === 'string' && safeConfig.activeProfile.trim()
-      ? safeConfig.activeProfile.trim()
-      : null,
-    profiles: normalizeProfilesSection(safeConfig.profiles),
+
+
   }
 }
 
@@ -320,48 +290,13 @@ function mergeEndpointInstalls(diskEndpointInstalls, incomingEndpointInstalls) {
 }
 
 function mergeProfiles(diskProfiles, incomingProfiles, options = {}) {
-  const replaceProfileNames = new Set((options.replaceProfileNames || []).filter((name) => typeof name === 'string' && name.length > 0))
-  const removedProfileNames = new Set((options.removedProfileNames || []).filter((name) => typeof name === 'string' && name.length > 0))
-  const normalizedDiskProfiles = normalizeProfilesSection(diskProfiles)
-  const normalizedIncomingProfiles = normalizeProfilesSection(incomingProfiles)
-  const mergedProfiles = {}
-  const profileNames = new Set([
-    ...Object.keys(normalizedDiskProfiles),
-    ...Object.keys(normalizedIncomingProfiles),
-  ])
-
-  for (const profileName of profileNames) {
-    if (removedProfileNames.has(profileName)) continue
-
-    const diskProfile = normalizedDiskProfiles[profileName]
-    const incomingProfile = normalizedIncomingProfiles[profileName]
-    if (!incomingProfile) {
-      if (diskProfile) mergedProfiles[profileName] = cloneConfigValue(diskProfile)
-      continue
-    }
-
-    if (!diskProfile || replaceProfileNames.has(profileName)) {
-      mergedProfiles[profileName] = cloneConfigValue(incomingProfile)
-      continue
-    }
-
-    mergedProfiles[profileName] = {
-      apiKeys: { ...diskProfile.apiKeys, ...incomingProfile.apiKeys },
-      providers: { ...diskProfile.providers, ...incomingProfile.providers },
-      favorites: mergeOrderedUniqueStrings(incomingProfile.favorites, diskProfile.favorites),
-      settings: normalizeProfileSettings({
-        ...diskProfile.settings,
-        ...incomingProfile.settings,
-      }),
-    }
-  }
-
-  return mergedProfiles
+  // 📖 Profile system removed - return empty object
+  return {}
 }
 
 /**
  * 📖 buildPersistedConfig merges the latest disk snapshot with the in-memory config so
- * 📖 stale writers do not accidentally wipe secrets, favorites, or profiles they did not touch.
+ * 📖 stale writers do not accidentally wipe secrets or favorites they did not touch.
  *
  * @param {object} incomingConfig
  * @param {object} [diskConfig=_emptyConfig()]
@@ -389,15 +324,8 @@ export function buildPersistedConfig(incomingConfig, diskConfig = _emptyConfig()
     endpointInstalls: options.replaceEndpointInstalls === true
       ? cloneConfigValue(normalizedIncoming.endpointInstalls)
       : mergeEndpointInstalls(normalizedDisk.endpointInstalls, normalizedIncoming.endpointInstalls),
-    activeProfile: normalizedIncoming.activeProfile,
-    profiles: mergeProfiles(normalizedDisk.profiles, normalizedIncoming.profiles, {
-      replaceProfileNames: options.replaceProfileNames,
-      removedProfileNames: options.removedProfileNames,
-    }),
-  }
+    // 📖 Profile system removed - always null
 
-  if (merged.activeProfile && !merged.profiles[merged.activeProfile]) {
-    merged.activeProfile = null
   }
 
   return normalizeConfigShape(merged)
@@ -435,32 +363,12 @@ export function persistApiKeysForProvider(config, providerKey) {
   const latestConfig = readStoredConfigSnapshot()
   const normalizedProviderValue = normalizeApiKeyValue(config?.apiKeys?.[providerKey])
 
-  latestConfig.activeProfile = typeof config?.activeProfile === 'string' && config.activeProfile.trim()
-    ? config.activeProfile.trim()
-    : null
-
   if (normalizedProviderValue === null) delete latestConfig.apiKeys[providerKey]
   else latestConfig.apiKeys[providerKey] = cloneConfigValue(normalizedProviderValue)
 
-  if (latestConfig.activeProfile) {
-    if (!latestConfig.profiles[latestConfig.activeProfile]) {
-      latestConfig.profiles[latestConfig.activeProfile] = config?.profiles?.[latestConfig.activeProfile]
-        ? cloneConfigValue(config.profiles[latestConfig.activeProfile])
-        : {
-            apiKeys: {},
-            providers: {},
-            favorites: [],
-            settings: _emptyProfileSettings(),
-          }
-    }
-
-    if (normalizedProviderValue === null) delete latestConfig.profiles[latestConfig.activeProfile].apiKeys[providerKey]
-    else latestConfig.profiles[latestConfig.activeProfile].apiKeys[providerKey] = cloneConfigValue(normalizedProviderValue)
-  }
-
   const saveResult = saveConfig(latestConfig, {
     replaceApiKeys: true,
-    replaceProfileNames: latestConfig.activeProfile ? [latestConfig.activeProfile] : [],
+    replaceProfileNames: [],
   })
 
   if (saveResult.success) replaceConfigContents(config, latestConfig)
@@ -924,13 +832,10 @@ export function isProviderEnabled(config, providerKey) {
   return providerConfig.enabled !== false
 }
 
-// ─── Config Profiles ──────────────────────────────────────────────────────────
+
 
 /**
- * 📖 _emptyProfileSettings: Default TUI settings stored in a profile.
- *
- * 📖 These settings are saved/restored when switching profiles so each profile
- *    can have different sort, filter, and ping preferences.
+ * 📖 _emptyProfileSettings: Default TUI settings.
  *
  * @returns {{ tierFilter: string|null, sortColumn: string, sortAsc: boolean, pingInterval: number, hideUnconfiguredModels: boolean, preferredToolMode: string }}
  */
@@ -1086,142 +991,15 @@ export function normalizeEndpointInstalls(endpointInstalls) {
     .filter(Boolean)
 }
 
-/**
- * 📖 saveAsProfile: Snapshot the current config state into a named profile.
- *
- * 📖 Takes the current apiKeys, providers, favorites, plus explicit TUI settings
- *    and stores them under config.profiles[name]. Does NOT change activeProfile —
- *    call setActiveProfile() separately if you want to switch to this profile.
- *
- * 📖 If a profile with the same name exists, it's overwritten.
- *
- * @param {object} config — Live config object (will be mutated)
- * @param {string} name — Profile name (e.g. 'work', 'personal', 'fast')
- * @param {object} [settings] — TUI settings to save (tierFilter, sortColumn, etc.)
- * @returns {object} The config object (for chaining)
- */
-export function saveAsProfile(config, name, settings = null) {
-  if (!config.profiles || typeof config.profiles !== 'object') config.profiles = {}
-  config.profiles[name] = {
-    apiKeys: JSON.parse(JSON.stringify(config.apiKeys || {})),
-    providers: JSON.parse(JSON.stringify(config.providers || {})),
-    favorites: [...(config.favorites || [])],
-    settings: settings ? { ..._emptyProfileSettings(), ...settings } : _emptyProfileSettings(),
-  }
-  return config
-}
-
-/**
- * 📖 loadProfile: Apply a named profile's values onto the live config.
- *
- * 📖 Replaces config.apiKeys, config.providers, config.favorites with the
- *    profile's stored values. Also sets config.activeProfile to the loaded name.
- *
- * 📖 Returns the profile's TUI settings so the caller (main CLI) can apply them
- *    to the live state object (sortColumn, tierFilter, etc.).
- *
- * 📖 If the profile doesn't exist, returns null (caller should show an error).
- *
- * @param {object} config — Live config object (will be mutated)
- * @param {string} name — Profile name to load
- * @returns {{ tierFilter: string|null, sortColumn: string, sortAsc: boolean, pingInterval: number }|null}
- *          The profile's TUI settings, or null if profile not found
- */
-export function loadProfile(config, name) {
-  const profile = config?.profiles?.[name]
-  if (!profile) return null
-  const nextSettings = profile.settings ? { ..._emptyProfileSettings(), ...profile.settings, proxy: normalizeProxySettings(profile.settings.proxy) } : _emptyProfileSettings()
-
-  // 📖 Deep-copy the profile data into the live config (don't share references)
-  // 📖 IMPORTANT: MERGE apiKeys instead of replacing to preserve keys not in profile
-  // 📖 Profile keys take priority over existing keys (allows profile-specific overrides)
-  const profileApiKeys = profile.apiKeys || {}
-  const mergedApiKeys = { ...config.apiKeys || {}, ...profileApiKeys }
-  config.apiKeys = JSON.parse(JSON.stringify(mergedApiKeys))
-
-  // 📖 For providers, favorites: replace with profile values (these are profile-specific settings)
-  config.providers = JSON.parse(JSON.stringify(profile.providers || {}))
-  config.favorites = [...(profile.favorites || [])]
-  config.settings = nextSettings
-  config.activeProfile = name
-
-  return nextSettings
-}
-
-/**
- * 📖 listProfiles: Get all saved profile names.
- *
- * @param {object} config
- * @returns {string[]} Array of profile names, sorted alphabetically
- */
-export function listProfiles(config) {
-  if (!config?.profiles || typeof config.profiles !== 'object') return []
-  return Object.keys(config.profiles).sort()
-}
-
-/**
- * 📖 deleteProfile: Remove a named profile from the config.
- *
- * 📖 If the deleted profile is the active one, clears activeProfile.
- *
- * @param {object} config — Live config object (will be mutated)
- * @param {string} name — Profile name to delete
- * @returns {boolean} True if the profile existed and was deleted
- */
-export function deleteProfile(config, name) {
-  if (!config?.profiles?.[name]) return false
-  delete config.profiles[name]
-  if (config.activeProfile === name) config.activeProfile = null
-  return true
-}
-
-/**
- * 📖 getActiveProfileName: Get the currently active profile name.
- *
- * @param {object} config
- * @returns {string|null} Profile name, or null if no profile is active
- */
-export function getActiveProfileName(config) {
-  return config?.activeProfile || null
-}
-
-/**
- * 📖 setActiveProfile: Set which profile is active (or null to clear).
- *
- * 📖 This just stores the name — it does NOT load the profile's data.
- *    Call loadProfile() first to actually apply the profile's values.
- *
- * @param {object} config — Live config object (will be mutated)
- * @param {string|null} name — Profile name, or null to clear
- */
-export function setActiveProfile(config, name) {
-  config.activeProfile = name || null
-}
+// 📖 Profile system removed - API keys now persist permanently across all sessions
 
 // 📖 Internal helper: create a blank config with the right shape
 function _emptyConfig() {
   return {
     apiKeys: {},
-    providers: {},
-    // 📖 Global TUI preferences that should persist even without a named profile.
-    settings: {
-      hideUnconfiguredModels: true,
-      proxy: normalizeProxySettings(),
-      disableWidthsWarning: false, // 📖 Disable widths warning toggle (default off)
-    },
-    // 📖 Pinned favorites rendered at top of the table ("providerKey/modelId").
     favorites: [],
-    // 📖 Telemetry consent is explicit. null = not decided yet.
-    telemetry: {
-      enabled: null,
-      consentVersion: 0,
-      anonymousId: null,
-    },
-    // 📖 Tracked `Y` installs — used to refresh external tool catalogs automatically.
-    endpointInstalls: [],
-    // 📖 Active profile name — null means no profile is loaded (using raw config).
-    activeProfile: null,
-    // 📖 Named profiles: each is a snapshot of apiKeys + providers + favorites + settings.
-    profiles: {},
+    proxySettings: { enabled: false, routing: {} },
+    endpointInstalls: {},
+    settings: _emptyProfileSettings(),
   }
 }

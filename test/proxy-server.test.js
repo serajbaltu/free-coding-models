@@ -1060,6 +1060,136 @@ describe('ProxyServer – compatibility routes', () => {
   })
 })
 
+// ─── Suite: ProxyServer – x-api-key auth (BUG 1) ─────────────────────────────
+// Claude Code / Anthropic SDK sends credentials via x-api-key header, not Bearer
+
+describe('ProxyServer – x-api-key auth', () => {
+  const cleanups = []
+  after(async () => { for (const fn of cleanups) await fn() })
+
+  it('accepts x-api-key header for authentication', async () => {
+    const upstream = await createMockUpstream(
+      { choices: [{ message: { content: 'ok' } }], usage: { prompt_tokens: 1, completion_tokens: 1 } }
+    )
+    cleanups.push(() => upstream.server.close())
+
+    const accounts = [
+      { id: 'acct-1', providerKey: 'p1', apiKey: 'k1', modelId: 'test-model', proxyModelId: 'test-model', url: upstream.url + '/v1' },
+    ]
+    const proxy = new ProxyServer({ port: 0, accounts, proxyApiKey: 'secret-key' })
+    const { port } = await proxy.start()
+    cleanups.push(() => proxy.stop())
+
+    // 📖 x-api-key should authenticate successfully
+    const res = await makeRequest(port, { model: 'test-model', messages: [{ role: 'user', content: 'hi' }] }, 'POST', '/v1/chat/completions', { 'x-api-key': 'secret-key' })
+    assert.strictEqual(res.statusCode, 200)
+  })
+
+  it('rejects invalid x-api-key', async () => {
+    const proxy = new ProxyServer({ port: 0, accounts: [], proxyApiKey: 'secret-key' })
+    const { port } = await proxy.start()
+    cleanups.push(() => proxy.stop())
+
+    const res = await makeRequest(port, null, 'GET', '/v1/models', { 'x-api-key': 'wrong-key' })
+    assert.strictEqual(res.statusCode, 401)
+  })
+
+  it('supports model hint in x-api-key (token:model format)', async () => {
+    const upstream = await createMockUpstream(
+      { choices: [{ message: { content: 'ok' } }], usage: { prompt_tokens: 1, completion_tokens: 1 } }
+    )
+    cleanups.push(() => upstream.server.close())
+
+    const accounts = [
+      { id: 'acct-1', providerKey: 'p1', apiKey: 'k1', modelId: 'target-model', proxyModelId: 'target-model', url: upstream.url + '/v1' },
+    ]
+    const proxy = new ProxyServer({ port: 0, accounts, proxyApiKey: 'secret-key' })
+    const { port } = await proxy.start()
+    cleanups.push(() => proxy.stop())
+
+    const res = await makeRequest(
+      port,
+      { model: 'claude-3-5-sonnet-20241022', messages: [{ role: 'user', content: 'hi' }] },
+      'POST', '/v1/messages',
+      { 'x-api-key': 'secret-key:target-model' }
+    )
+    // 📖 Should not be 401 — the x-api-key with model hint should authenticate
+    assert.notStrictEqual(res.statusCode, 401)
+  })
+
+  it('accepts real Anthropic API keys (sk-ant-*) as valid auth', async () => {
+    const upstream = await createMockUpstream(
+      { choices: [{ message: { content: 'ok' } }], usage: { prompt_tokens: 1, completion_tokens: 1 } }
+    )
+    cleanups.push(() => upstream.server.close())
+
+    const accounts = [
+      { id: 'acct-1', providerKey: 'p1', apiKey: 'k1', modelId: 'test-model', proxyModelId: 'test-model', url: upstream.url + '/v1' },
+    ]
+    const proxy = new ProxyServer({ port: 0, accounts, proxyApiKey: 'secret-key' })
+    const { port } = await proxy.start()
+    cleanups.push(() => proxy.stop())
+
+    // 📖 Claude Code sends its own stored Anthropic key — proxy should accept it
+    const res = await makeRequest(port, { model: 'test-model', messages: [{ role: 'user', content: 'hi' }] }, 'POST', '/v1/chat/completions', { authorization: 'Bearer sk-ant-oat01-realkey123' })
+    assert.strictEqual(res.statusCode, 200)
+  })
+
+  it('still rejects non-Anthropic invalid keys', async () => {
+    const proxy = new ProxyServer({ port: 0, accounts: [], proxyApiKey: 'secret-key' })
+    const { port } = await proxy.start()
+    cleanups.push(() => proxy.stop())
+
+    const res = await makeRequest(port, null, 'GET', '/v1/models', { authorization: 'Bearer totally-wrong-key' })
+    assert.strictEqual(res.statusCode, 401)
+  })
+})
+
+// ─── Suite: ProxyServer – Claude model fallback (BUG 2) ──────────────────────
+// When anthropicRouting is all null, Claude model names should fall back to first account
+
+describe('ProxyServer – Claude model fallback with null routing', () => {
+  const cleanups = []
+  after(async () => { for (const fn of cleanups) await fn() })
+
+  it('falls back to first account model when anthropicRouting is all null', async () => {
+    let capturedModel = null
+    const upstream = await new Promise(resolve => {
+      const server = http.createServer((req, res) => {
+        let body = ''
+        req.on('data', chunk => body += chunk)
+        req.on('end', () => {
+          try { capturedModel = JSON.parse(body).model } catch {}
+          res.writeHead(200, { 'content-type': 'application/json' })
+          res.end(JSON.stringify({ choices: [{ message: { content: 'ok' } }], usage: { prompt_tokens: 1, completion_tokens: 1 } }))
+        })
+      })
+      server.listen(0, '127.0.0.1', () => resolve({ server, port: server.address().port, url: `http://127.0.0.1:${server.address().port}` }))
+    })
+    cleanups.push(() => upstream.server.close())
+
+    const accounts = [
+      { id: 'acct-1', providerKey: 'p1', apiKey: 'k1', modelId: 'real-oss-model', proxyModelId: 'real-oss-model', url: upstream.url + '/v1' },
+    ]
+    const proxy = new ProxyServer({
+      port: 0, accounts, proxyApiKey: 'secret-key',
+      anthropicRouting: { model: null, modelOpus: null, modelSonnet: null, modelHaiku: null },
+    })
+    const { port } = await proxy.start()
+    cleanups.push(() => proxy.stop())
+
+    // 📖 Claude Code sends a Claude model name — should fallback to first account's model
+    const res = await makeRequest(
+      port,
+      { model: 'claude-3-5-sonnet-20241022', messages: [{ role: 'user', content: 'hi' }] },
+      'POST', '/v1/messages',
+      { 'x-api-key': 'secret-key' }
+    )
+    assert.notStrictEqual(res.statusCode, 404, 'should not return 404 for Claude model with fallback')
+    assert.notStrictEqual(res.statusCode, 401, 'should not return 401 with valid x-api-key')
+  })
+})
+
 // ─── Suite: ProxyServer – upstream request timeout ────────────────────────────
 // These tests verify that the proxy does NOT hang forever when the upstream
 // is slow or unresponsive — it must time out and treat it like a network error.

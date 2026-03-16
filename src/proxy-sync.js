@@ -32,13 +32,33 @@ import { getToolMeta } from './tool-metadata.js'
 // 📖 Provider ID used for all proxy entries — replaces per-provider fcm-{providerKey} IDs
 const PROXY_PROVIDER_ID = 'fcm-proxy'
 
+// 📖 Ensures the env file is sourced in the user's shell profile (.zshrc, .bashrc, .bash_profile)
+// 📖 Only adds the source line if not already present — idempotent
+function ensureShellSourceLine(envFilePath) {
+  const home = homedir()
+  const candidates = ['.zshrc', '.bashrc', '.bash_profile']
+  let profilePath = null
+  for (const c of candidates) {
+    const p = join(home, c)
+    if (existsSync(p)) { profilePath = p; break }
+  }
+  if (!profilePath) return // 📖 No shell profile found — skip silently
+
+  try {
+    const content = readFileSync(profilePath, 'utf8')
+    if (content.includes(envFilePath)) return // 📖 Already sourced
+    const sourceLine = `\n# 📖 FCM Proxy — Claude Code env vars\n[ -f "${envFilePath}" ] && source "${envFilePath}"\n`
+    writeFileSync(profilePath, content + sourceLine)
+  } catch { /* best effort */ }
+}
+
 // 📖 Tools that support proxy sync (have base URL + API key config)
 // 📖 Gemini is excluded — it only stores a model name, no URL/key fields.
 // 📖 Claude proxy integration is
 // 📖 runtime-only now, with fake Claude ids handled by the proxy itself.
 export const PROXY_SYNCABLE_TOOLS = [
   'opencode', 'opencode-desktop', 'openclaw', 'crush', 'goose', 'pi',
-  'aider', 'amp', 'qwen', 'codex', 'openhands',
+  'aider', 'amp', 'qwen', 'codex', 'openhands', 'claude-code',
 ]
 
 const PROXY_SYNCABLE_CANONICAL = new Set(PROXY_SYNCABLE_TOOLS.map(tool => tool === 'opencode-desktop' ? 'opencode' : tool))
@@ -343,7 +363,7 @@ function syncEnvTool(proxyInfo, mergedModels, toolMode) {
   // 📖 Claude Code: Anthropic-specific env vars
   if (toolMode === 'claude-code') {
     const proxyBase = proxyInfo.baseUrl.replace(/\/v1$/, '')
-    envLines.push(`export ANTHROPIC_AUTH_TOKEN="${proxyInfo.token}"`)
+    envLines.push(`export ANTHROPIC_API_KEY="${proxyInfo.token}"`)
     envLines.push(`export ANTHROPIC_BASE_URL="${proxyBase}"`)
   }
 
@@ -352,6 +372,12 @@ function syncEnvTool(proxyInfo, mergedModels, toolMode) {
     try { copyFileSync(envFilePath, envFilePath + '.bak') } catch { /* best effort */ }
   }
   writeFileSync(envFilePath, envLines.join('\n') + '\n')
+
+  // 📖 Auto-source the env file in the shell profile so Claude Code picks it up
+  if (toolMode === 'claude-code') {
+    ensureShellSourceLine(envFilePath)
+  }
+
   return { path: envFilePath, modelCount: models.length }
 }
 

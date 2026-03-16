@@ -403,15 +403,10 @@ export function parseArgs(argv) {
   let apiKey = null
   const flags = []
 
-  // 📖 Determine which arg indices are consumed by --tier and --profile so we skip them
+  // 📖 Determine which arg indices are consumed by --tier so we skip them
   const tierIdx = args.findIndex(a => a.toLowerCase() === '--tier')
   const tierValueIdx = (tierIdx !== -1 && args[tierIdx + 1] && !args[tierIdx + 1].startsWith('--'))
     ? tierIdx + 1
-    : -1
-
-  const profileIdx = args.findIndex(a => a.toLowerCase() === '--profile')
-  const profileValueIdx = (profileIdx !== -1 && args[profileIdx + 1] && !args[profileIdx + 1].startsWith('--'))
-    ? profileIdx + 1
     : -1
 
   // New value flags
@@ -433,7 +428,6 @@ export function parseArgs(argv) {
   // 📖 Set of arg indices that are values for flags (not API keys)
   const skipIndices = new Set()
   if (tierValueIdx !== -1) skipIndices.add(tierValueIdx)
-  if (profileValueIdx !== -1) skipIndices.add(profileValueIdx)
   if (sortValueIdx !== -1) skipIndices.add(sortValueIdx)
   if (originValueIdx !== -1) skipIndices.add(originValueIdx)
   if (pingIntervalValueIdx !== -1) skipIndices.add(pingIntervalValueIdx)
@@ -442,7 +436,7 @@ export function parseArgs(argv) {
     if (arg.startsWith('--') || arg === '-h') {
       flags.push(arg.toLowerCase())
     } else if (skipIndices.has(i)) {
-      // 📖 Skip — this is a value for --tier or --profile, not an API key
+      // 📖 Skip — this is a value for --tier, not an API key
     } else if (!apiKey) {
       apiKey = arg
     }
@@ -465,6 +459,7 @@ export function parseArgs(argv) {
   const piMode = flags.includes('--pi')
   const noTelemetry = flags.includes('--no-telemetry')
   const cleanProxyMode = flags.includes('--clean-proxy') || flags.includes('--proxy-clean')
+  const proxyForegroundMode = flags.includes('--proxy')
   const jsonMode = flags.includes('--json')
   const helpMode = flags.includes('--help') || flags.includes('-h')
   const premiumMode = flags.includes('--premium')
@@ -482,7 +477,7 @@ export function parseArgs(argv) {
   let pingInterval = pingIntervalValueIdx !== -1 ? parseInt(args[pingIntervalValueIdx], 10) : null
   let sortDirection = sortDesc ? 'desc' : (sortAscFlag ? 'asc' : null)
 
-  const profileName = profileValueIdx !== -1 ? args[profileValueIdx] : null
+  // 📖 Profile system removed - API keys now persist permanently across all sessions
 
   // 📖 --recommend — launch directly into Smart Recommend mode (Q key equivalent)
   const recommendMode = flags.includes('--recommend')
@@ -517,8 +512,9 @@ export function parseArgs(argv) {
     showUnconfigured,
     disableWidthsWarning,
     premiumMode,
-    profileName,
-    recommendMode
+    // 📖 Profile system removed - API keys now persist permanently across all sessions
+    recommendMode,
+    proxyForegroundMode,
   }
 }
 

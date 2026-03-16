@@ -39,8 +39,7 @@ import {
   formatCtxWindow, labelFromId
 } from '../src/utils.js'
 import {
-  _emptyProfileSettings, saveAsProfile, loadProfile, listProfiles,
-  deleteProfile, getActiveProfileName, setActiveProfile, getProxySettings,
+  _emptyProfileSettings, getProxySettings,
   normalizeProxySettings, normalizeEndpointInstalls, getApiKey, setClaudeProxyModelRouting,
   buildPersistedConfig
 } from '../src/config.js'
@@ -811,9 +810,6 @@ describe('renderTable outdated footer banner', () => {
       190,
       0,
       null,
-      false,
-      '',
-      null,
       'normal',
       'auto',
       false,
@@ -860,9 +856,6 @@ describe('renderTable outdated footer banner', () => {
       20,
       190,
       0,
-      null,
-      false,
-      '',
       null,
       'normal',
       'auto',
@@ -1151,7 +1144,7 @@ describe('cli help text', () => {
       '--json',
       '--tier <S|A|B|C>',
       '--recommend',
-      '--profile <name>',
+      '--proxy',
       '--no-telemetry',
       '--clean-proxy, --proxy-clean',
       '--help, -h',
@@ -1419,23 +1412,9 @@ describe('getTopRecommendations', () => {
 // ═══════════════════════════════════════════════════════════════════════════════
 // 📖 6. PARSEARGS — --profile AND --recommend FLAGS
 // ═══════════════════════════════════════════════════════════════════════════════
-describe('parseArgs --profile and --recommend', () => {
+describe('parseArgs --recommend', () => {
   // 📖 Helper: simulate process.argv (first two entries are node + script path)
   const argv = (...args) => ['node', 'script.js', ...args]
-
-  it('parses --profile with a value', () => {
-    const result = parseArgs(argv('--profile', 'work'))
-    assert.equal(result.profileName, 'work')
-  })
-
-  it('returns null profileName when --profile has no value', () => {
-    assert.equal(parseArgs(argv('--profile')).profileName, null)
-    assert.equal(parseArgs(argv('--profile', '--best')).profileName, null)
-  })
-
-  it('does not capture --profile value as apiKey', () => {
-    assert.equal(parseArgs(argv('--profile', 'work')).apiKey, null)
-  })
 
   it('parses --recommend flag', () => {
     assert.equal(parseArgs(argv('--recommend')).recommendMode, true)
@@ -1445,17 +1424,15 @@ describe('parseArgs --profile and --recommend', () => {
     assert.equal(parseArgs(argv()).recommendMode, false)
   })
 
-  it('handles --profile and --recommend together', () => {
-    const result = parseArgs(argv('--profile', 'fast', '--recommend', '--opencode'))
-    assert.equal(result.profileName, 'fast')
-    assert.equal(result.recommendMode, true)
-    assert.equal(result.openCodeMode, true)
-  })
-
   it('parses the proxy cleanup flags', () => {
     assert.equal(parseArgs(argv('--clean-proxy')).cleanProxyMode, true)
     assert.equal(parseArgs(argv('--proxy-clean')).cleanProxyMode, true)
     assert.equal(parseArgs(argv()).cleanProxyMode, false)
+  })
+
+  it('parses --proxy foreground mode flag', () => {
+    assert.equal(parseArgs(argv('--proxy')).proxyForegroundMode, true)
+    assert.equal(parseArgs(argv()).proxyForegroundMode, false)
   })
 })
 
@@ -1490,134 +1467,6 @@ describe('config profile functions', () => {
     assert.equal(settings.proxy.syncToOpenCode, false)
     assert.equal(settings.proxy.preferredPort, 0)
     assert.ok(settings.proxy.stableToken.startsWith('fcm_'))
-  })
-
-  it('listProfiles returns empty array for fresh config', () => {
-    const config = mockConfig()
-    assert.deepEqual(listProfiles(config), [])
-  })
-
-  it('saveAsProfile saves and listProfiles returns it', () => {
-    const config = mockConfig()
-    saveAsProfile(config, 'work', { sortColumn: 'swe', sortAsc: false, pingInterval: 5000 })
-    assert.deepEqual(listProfiles(config), ['work'])
-  })
-
-  it('saveAsProfile copies apiKeys and favorites into profile', () => {
-    const config = mockConfig()
-    saveAsProfile(config, 'myprofile')
-    const profile = config.profiles.myprofile
-    assert.deepEqual(profile.apiKeys, { nvidia: 'test-key' })
-    assert.deepEqual(profile.favorites, ['nvidia/test-model'])
-  })
-
-  it('saveAsProfile persists the configured-only filter in profile settings', () => {
-    const config = mockConfig()
-    saveAsProfile(config, 'focused', { hideUnconfiguredModels: true })
-    assert.equal(config.profiles.focused.settings.hideUnconfiguredModels, true)
-  })
-
-  it('saveAsProfile can persist proxy settings', () => {
-    const config = mockConfig()
-    saveAsProfile(config, 'proxy', { proxy: { enabled: true, syncToOpenCode: true, preferredPort: 8045 } })
-    assert.equal(config.profiles.proxy.settings.proxy.enabled, true)
-    assert.equal(config.profiles.proxy.settings.proxy.syncToOpenCode, true)
-    assert.equal(config.profiles.proxy.settings.proxy.preferredPort, 8045)
-  })
-
-  it('loadProfile returns settings and sets activeProfile', () => {
-    const config = mockConfig()
-    saveAsProfile(config, 'dev', { sortColumn: 'rank', sortAsc: true, pingInterval: 3000, hideUnconfiguredModels: true, proxy: { enabled: true, syncToOpenCode: true, preferredPort: 9000 } })
-    const settings = loadProfile(config, 'dev')
-    assert.equal(settings.sortColumn, 'rank')
-    assert.equal(settings.hideUnconfiguredModels, true)
-    assert.equal(settings.proxy.enabled, true)
-    assert.equal(config.settings.proxy.preferredPort, 9000)
-    assert.equal(config.activeProfile, 'dev')
-  })
-
-  it('loadProfile returns null for nonexistent profile', () => {
-    const config = mockConfig()
-    assert.equal(loadProfile(config, 'nope'), null)
-  })
-
-  it('loadProfile applies apiKeys from profile to config', () => {
-    const config = mockConfig()
-    saveAsProfile(config, 'p1')
-    // 📖 Mutate config apiKeys after saving profile
-    config.apiKeys.nvidia = 'changed-key'
-    loadProfile(config, 'p1')
-    assert.equal(config.apiKeys.nvidia, 'test-key', 'should restore original key from profile')
-  })
-
-  it('loadProfile MERGES apiKeys instead of replacing (preserves keys not in profile)', () => {
-    // 📖 Bug fix: loading a profile with fewer keys was REPLACING all keys
-    // 📖 Now it should MERGE so keys outside the profile are preserved
-    const config = mockConfig()
-    // Add extra keys that won't be in the profile
-    config.apiKeys.groq = 'gsk-test-groq'
-    config.apiKeys.openrouter = 'sk-or-test-openrouter'
-
-    // Save profile with ONLY nvidia key
-    saveAsProfile(config, 'minimal')
-    const profileData = config.profiles.minimal
-    profileData.apiKeys = { nvidia: 'test-key' } // Explicitly remove other keys from profile
-
-    // Add a new key AFTER saving profile
-    config.apiKeys.together = 'together-test-new'
-
-    // Load the profile - should MERGE, not replace
-    loadProfile(config, 'minimal')
-
-    // Profile key should override
-    assert.equal(config.apiKeys.nvidia, 'test-key', 'profile key should apply')
-    // Non-profile keys should be PRESERVED
-    assert.equal(config.apiKeys.groq, 'gsk-test-groq', 'groq key should be preserved')
-    assert.equal(config.apiKeys.openrouter, 'sk-or-test-openrouter', 'openrouter key should be preserved')
-    assert.equal(config.apiKeys.together, 'together-test-new', 'new key added after profile save should be preserved')
-  })
-
-  it('deleteProfile removes the profile', () => {
-    const config = mockConfig()
-    saveAsProfile(config, 'temp')
-    assert.deepEqual(listProfiles(config), ['temp'])
-    deleteProfile(config, 'temp')
-    assert.deepEqual(listProfiles(config), [])
-  })
-
-  it('deleteProfile clears activeProfile if it was the deleted one', () => {
-    const config = mockConfig()
-    saveAsProfile(config, 'active')
-    setActiveProfile(config, 'active')
-    assert.equal(getActiveProfileName(config), 'active')
-    deleteProfile(config, 'active')
-    assert.equal(getActiveProfileName(config), null)
-  })
-
-  it('getActiveProfileName returns null by default', () => {
-    const config = mockConfig()
-    assert.equal(getActiveProfileName(config), null)
-  })
-
-  it('setActiveProfile sets and getActiveProfileName reads it', () => {
-    const config = mockConfig()
-    setActiveProfile(config, 'fast')
-    assert.equal(getActiveProfileName(config), 'fast')
-  })
-
-  it('setActiveProfile(null) clears the active profile', () => {
-    const config = mockConfig()
-    setActiveProfile(config, 'fast')
-    setActiveProfile(config, null)
-    assert.equal(getActiveProfileName(config), null)
-  })
-
-  it('multiple profiles can coexist', () => {
-    const config = mockConfig()
-    saveAsProfile(config, 'work', { sortColumn: 'rank' })
-    saveAsProfile(config, 'personal', { sortColumn: 'avg' })
-    saveAsProfile(config, 'fast', { sortColumn: 'ping' })
-    assert.deepEqual(listProfiles(config), ['fast', 'personal', 'work'])
   })
 
   it('normalizes proxy settings to disabled-by-default', () => {
@@ -2091,7 +1940,7 @@ describe('tool launcher env building', () => {
 describe('proxy sync target resolution', () => {
   it('follows the current tool mode instead of a stored activeTool selector', () => {
     assert.equal(resolveProxySyncToolMode('opencode-desktop'), 'opencode')
-    assert.equal(resolveProxySyncToolMode('claude-code'), null)
+    assert.equal(resolveProxySyncToolMode('claude-code'), 'claude-code')
     assert.equal(resolveProxySyncToolMode('codex'), 'codex')
     assert.equal(resolveProxySyncToolMode('gemini'), null)
   })

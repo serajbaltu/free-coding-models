@@ -99,7 +99,7 @@ import { homedir } from 'os'
 import { join, dirname } from 'path'
 import { MODELS, sources } from '../sources.js'
 import { getAvg, getVerdict, getUptime, getP95, getJitter, getStabilityScore, sortResults, filterByTier, findBestModel, parseArgs, TIER_ORDER, VERDICT_ORDER, TIER_LETTER_MAP, scoreModelForTask, getTopRecommendations, TASK_TYPES, PRIORITY_TYPES, CONTEXT_BUDGETS, formatCtxWindow, labelFromId, getProxyStatusInfo, formatResultsAsJSON } from '../src/utils.js'
-import { loadConfig, saveConfig, getApiKey, getProxySettings, resolveApiKeys, addApiKey, removeApiKey, isProviderEnabled, saveAsProfile, loadProfile, listProfiles, deleteProfile, getActiveProfileName, setActiveProfile, _emptyProfileSettings, persistApiKeysForProvider } from '../src/config.js'
+import { loadConfig, saveConfig, getApiKey, getProxySettings, resolveApiKeys, addApiKey, removeApiKey, isProviderEnabled, persistApiKeysForProvider } from '../src/config.js'
 import { buildMergedModels } from '../src/model-merger.js'
 import { ProxyServer } from '../src/proxy-server.js'
 import { loadOpenCodeConfig, saveOpenCodeConfig, syncToOpenCode, restoreOpenCodeBackup, cleanupOpenCodeProxyConfig } from '../src/opencode-sync.js'
@@ -126,6 +126,7 @@ import { createOverlayRenderers } from '../src/overlays.js'
 import { createKeyHandler } from '../src/key-handler.js'
 import { getToolModeOrder, getToolMeta } from '../src/tool-metadata.js'
 import { startExternalTool } from '../src/tool-launchers.js'
+import { startForegroundProxy } from '../src/proxy-foreground.js'
 import { getConfiguredInstallableProviders, installProviderEndpoints, refreshInstalledEndpoints, getInstallTargetModes, getProviderCatalogModels, CONNECTION_MODES } from '../src/endpoint-installer.js'
 import { loadCache, saveCache, clearCache, getCacheAge } from '../src/cache.js'
 import { checkConfigSecurity } from '../src/security.js'
@@ -229,6 +230,12 @@ async function main() {
     process.exit(0)
   }
 
+  // 📖 Foreground proxy mode — starts the proxy in the current terminal with live dashboard
+  if (cliArgs.proxyForegroundMode) {
+    await startForegroundProxy(config, chalk)
+    return // 📖 startForegroundProxy keeps the process alive via signal handlers
+  }
+
   // 📖 CLI subcommand: free-coding-models daemon <action>
   const daemonSubcmd = process.argv[2] === 'daemon' ? (process.argv[3] || 'status') : null
   if (daemonSubcmd) {
@@ -315,19 +322,7 @@ async function main() {
     process.exit(1)
   }
 
-  // 📖 If --profile <name> was passed, load that profile into the live config
-  let startupProfileSettings = null
-  if (cliArgs.profileName) {
-    startupProfileSettings = loadProfile(config, cliArgs.profileName)
-    if (!startupProfileSettings) {
-      console.error(chalk.red(`  Unknown profile "${cliArgs.profileName}". Available: ${listProfiles(config).join(', ') || '(none)'}`))
-      process.exit(1)
-    }
-    saveConfig(config, {
-      replaceApiKeys: true,
-      replaceFavorites: true,
-    })
-  }
+  // 📖 Profile system removed - API keys now persist permanently across all sessions
 
   // 📖 Check if any provider has a key — if not, run the first-time setup wizard
   const hasAnyKey = Object.keys(sources).some(pk => !!getApiKey(config, pk))
@@ -494,15 +489,15 @@ async function main() {
     return 'normal'
   }
 
-  // 📖 tierFilter: current tier filter letter (null = all, 'S' = S+/S, 'A' = A+/A/A-, etc.)
+   // 📖 tierFilter: current tier filter letter (null = all, 'S' = S+/S, 'A' = A+/A/A-, etc.)
   const state = {
     results,
     pendingPings: 0,
     frame: 0,
     cursor: 0,
     selectedModel: null,
-    sortColumn: startupProfileSettings?.sortColumn ?? config.settings?.sortColumn ?? 'avg',
-    sortDirection: (startupProfileSettings?.sortAsc ?? config.settings?.sortAsc ?? true) ? 'asc' : 'desc',
+    sortColumn: config.settings?.sortColumn ?? 'avg',
+    sortDirection: (config.settings?.sortAsc ?? true) ? 'asc' : 'desc',
     pingInterval: PING_MODE_INTERVALS.speed, // 📖 Effective live interval derived from the active ping mode.
     pingMode: 'speed',            // 📖 Current ping mode: speed | normal | slow | forced.
     pingModeSource: 'startup',    // 📖 Why this mode is active: startup | manual | auto | idle | activity.
@@ -516,7 +511,7 @@ async function main() {
     tierFilterMode: 0,            // 📖 Index into TIER_CYCLE (0=All, 1=S+, 2=S, ...)
     originFilterMode: 0,          // 📖 Index into ORIGIN_CYCLE (0=All, then providers)
     premiumMode: cliArgs.premiumMode, // 📖 Special elite-only mode: S/S+ only, Health UP only, Perfect/Normal/Slow verdict only.
-    hideUnconfiguredModels: startupProfileSettings?.hideUnconfiguredModels === true || config.settings?.hideUnconfiguredModels === true, // 📖 Hide providers with no configured API key when true.
+    hideUnconfiguredModels: config.settings?.hideUnconfiguredModels === true, // 📖 Hide providers with no configured API key when true.
     disableWidthsWarning: config.settings?.disableWidthsWarning ?? false, // 📖 Disable widths warning toggle (default off)
       scrollOffset: 0,              // 📖 First visible model index in viewport
       terminalRows: process.stdout.rows || 24,  // 📖 Current terminal height
@@ -574,10 +569,6 @@ async function main() {
     recommendAnalysisTimer: null, // 📖 setInterval handle for the 10s analysis phase
     recommendPingTimer: null,     // 📖 setInterval handle for 2 pings/sec during analysis
     recommendedKeys: new Set(),   // 📖 Set of "providerKey/modelId" for recommended models (shown in main table)
-    // 📖 Config Profiles state
-    activeProfile: getActiveProfileName(config), // 📖 Currently loaded profile name (or null)
-    profileSaveMode: false,       // 📖 Whether the inline "Save profile" name input is active
-    profileSaveBuffer: '',        // 📖 Typed characters for the profile name being saved
     // 📖 Feedback state (J/I keys open it)
     feedbackOpen: false,          // 📖 Whether the feedback overlay is active
     bugReportBuffer: '',          // 📖 Typed characters for the feedback message
@@ -798,6 +789,9 @@ async function main() {
 
   // 📖 Enter alternate screen — animation runs here, zero scrollback pollution
   process.stdout.write(ALT_ENTER)
+  if (process.stdout.isTTY) {
+    process.stdout.flush && process.stdout.flush()
+  }
 
   // 📖 Ensure we always leave alt screen cleanly (Ctrl+C, crash, normal exit)
   const exit = (code = 0) => {
@@ -806,6 +800,9 @@ async function main() {
     clearInterval(ticker)
     clearTimeout(state.pingIntervalObj)
     process.stdout.write(ALT_LEAVE)
+    if (process.stdout.isTTY) {
+      process.stdout.flush && process.stdout.flush()
+    }
     process.exit(code)
   }
   process.on('SIGINT',  () => exit(0))
@@ -813,7 +810,7 @@ async function main() {
 
   // 📖 originFilterMode: index into ORIGIN_CYCLE, 0=All, then each provider key in order
   const ORIGIN_CYCLE = [null, ...Object.keys(sources)]
-  const resolvedTierFilter = startupProfileSettings?.tierFilter ?? config.settings?.tierFilter
+  const resolvedTierFilter = config.settings?.tierFilter
   state.tierFilterMode = resolvedTierFilter ? Math.max(0, TIER_CYCLE.indexOf(resolvedTierFilter)) : 0
   const resolvedOriginFilter = config.settings?.originFilter
   state.originFilterMode = resolvedOriginFilter ? Math.max(0, ORIGIN_CYCLE.indexOf(resolvedOriginFilter)) : 0
@@ -865,6 +862,9 @@ async function main() {
     if (process.stdin.isTTY && resetRawMode) process.stdin.setRawMode(false)
     process.stdin.pause()
     process.stdout.write(ALT_LEAVE)
+    if (process.stdout.isTTY) {
+      process.stdout.flush && process.stdout.flush()
+    }
   }
 
   const overlays = createOverlayRenderers(state, {
@@ -877,7 +877,6 @@ async function main() {
     getProxySettings,
     resolveApiKeys,
     isProviderEnabled,
-    listProfiles,
     TIER_CYCLE,
     SETTINGS_OVERLAY_BG,
     HELP_OVERLAY_BG,
@@ -919,11 +918,6 @@ async function main() {
     removeApiKey,
     persistApiKeysForProvider,
     isProviderEnabled,
-    listProfiles,
-    loadProfile,
-    deleteProfile,
-    saveAsProfile,
-    setActiveProfile,
     saveConfig,
     getConfiguredInstallableProviders,
     getInstallTargetModes,
@@ -1022,15 +1016,21 @@ async function main() {
                 ? overlays.renderLog()
               : state.changelogOpen
                 ? overlays.renderChangelog()
-                : renderTable(state.results, state.pendingPings, state.frame, state.cursor, state.sortColumn, state.sortDirection, state.pingInterval, state.lastPingTime, state.mode, state.tierFilterMode, state.scrollOffset, state.terminalRows, state.terminalCols, state.originFilterMode, state.activeProfile, state.profileSaveMode, state.profileSaveBuffer, state.proxyStartupStatus, state.pingMode, state.pingModeSource, state.hideUnconfiguredModels, state.widthWarningStartedAt, state.widthWarningDismissed, state.widthWarningShowCount, state.settingsUpdateState, state.settingsUpdateLatestVersion, getProxySettings(state.config).enabled === true, state.startupLatestVersion, state.versionAlertsEnabled)
+                 : renderTable(state.results, state.pendingPings, state.frame, state.cursor, state.sortColumn, state.sortDirection, state.pingInterval, state.lastPingTime, state.mode, state.tierFilterMode, state.scrollOffset, state.terminalRows, state.terminalCols, state.originFilterMode, state.proxyStartupStatus, state.pingMode, state.pingModeSource, state.hideUnconfiguredModels, state.widthWarningStartedAt, state.widthWarningDismissed, state.widthWarningShowCount, state.settingsUpdateState, state.settingsUpdateLatestVersion, getProxySettings(state.config).enabled === true, state.startupLatestVersion, state.versionAlertsEnabled)
     process.stdout.write(ALT_HOME + content)
+    if (process.stdout.isTTY) {
+      process.stdout.flush && process.stdout.flush()
+    }
   }, Math.round(1000 / FPS))
 
   // 📖 Populate visibleSorted before the first frame so Enter works immediately
   const initialVisible = state.results.filter(r => !r.hidden)
   state.visibleSorted = sortResultsWithPinnedFavorites(initialVisible, state.sortColumn, state.sortDirection)
 
-  process.stdout.write(ALT_HOME + renderTable(state.results, state.pendingPings, state.frame, state.cursor, state.sortColumn, state.sortDirection, state.pingInterval, state.lastPingTime, state.mode, state.tierFilterMode, state.scrollOffset, state.terminalRows, state.terminalCols, state.originFilterMode, state.activeProfile, state.profileSaveMode, state.profileSaveBuffer, state.proxyStartupStatus, state.pingMode, state.pingModeSource, state.hideUnconfiguredModels, state.widthWarningStartedAt, state.widthWarningDismissed, state.widthWarningShowCount, state.settingsUpdateState, state.settingsUpdateLatestVersion, getProxySettings(state.config).enabled === true, state.startupLatestVersion, state.versionAlertsEnabled))
+  process.stdout.write(ALT_HOME + renderTable(state.results, state.pendingPings, state.frame, state.cursor, state.sortColumn, state.sortDirection, state.pingInterval, state.lastPingTime, state.mode, state.tierFilterMode, state.scrollOffset, state.terminalRows, state.terminalCols, state.originFilterMode, state.proxyStartupStatus, state.pingMode, state.pingModeSource, state.hideUnconfiguredModels, state.widthWarningStartedAt, state.widthWarningDismissed, state.widthWarningShowCount, state.settingsUpdateState, state.settingsUpdateLatestVersion, getProxySettings(state.config).enabled === true, state.startupLatestVersion, state.versionAlertsEnabled))
+  if (process.stdout.isTTY) {
+    process.stdout.flush && process.stdout.flush()
+  }
 
   // 📖 If --recommend was passed, auto-open the Smart Recommend overlay on start
   if (cliArgs.recommendMode) {

@@ -12,7 +12,7 @@
  *   - Hotkey-aware header lettering so highlighted letters always match live sort/filter keys
  *   - Emoji-aware padding via padEndDisplay for aligned verdict/status cells
  *   - Viewport clipping with above/below indicators
- *   - Smart badges (mode, tier filter, origin filter, profile)
+ *   - Smart badges (mode, tier filter, origin filter)
  *   - Footer J badge: green "Proxy On" / red "Proxy Off" indicator with direct overlay access
  *   - Install-endpoints shortcut surfaced directly in the footer hints
  *   - Full-width red outdated-version banner when a newer npm release is known
@@ -93,7 +93,7 @@ export function setActiveProxy(proxyInstance) {
 }
 
 // ─── renderTable: mode param controls footer hint text (opencode vs openclaw) ─────────
-export function renderTable(results, pendingPings, frame, cursor = null, sortColumn = 'avg', sortDirection = 'asc', pingInterval = PING_INTERVAL, lastPingTime = Date.now(), mode = 'opencode', tierFilterMode = 0, scrollOffset = 0, terminalRows = 0, terminalCols = 0, originFilterMode = 0, activeProfile = null, profileSaveMode = false, profileSaveBuffer = '', proxyStartupStatus = null, pingMode = 'normal', pingModeSource = 'auto', hideUnconfiguredModels = false, widthWarningStartedAt = null, widthWarningDismissed = false, widthWarningShowCount = 0, settingsUpdateState = 'idle', settingsUpdateLatestVersion = null, proxyEnabled = false, startupLatestVersion = null, versionAlertsEnabled = true, disableWidthsWarning = false) {
+export function renderTable(results, pendingPings, frame, cursor = null, sortColumn = 'avg', sortDirection = 'asc', pingInterval = PING_INTERVAL, lastPingTime = Date.now(), mode = 'opencode', tierFilterMode = 0, scrollOffset = 0, terminalRows = 0, terminalCols = 0, originFilterMode = 0, proxyStartupStatus = null, pingMode = 'normal', pingModeSource = 'auto', hideUnconfiguredModels = false, widthWarningStartedAt = null, widthWarningDismissed = false, widthWarningShowCount = 0, settingsUpdateState = 'idle', settingsUpdateLatestVersion = null, proxyEnabled = false, startupLatestVersion = null, versionAlertsEnabled = true, disableWidthsWarning = false) {
   // 📖 Filter out hidden models for display
   const visibleResults = results.filter(r => !r.hidden)
 
@@ -172,11 +172,7 @@ export function renderTable(results, pendingPings, frame, cursor = null, sortCol
     }
   }
 
-  // 📖 Profile badge — shown when a named profile is active (Shift+P to cycle, Shift+S to save)
-  let profileBadge = ''
-  if (activeProfile) {
-    profileBadge = chalk.bold.rgb(200, 150, 255)(` [📋 ${activeProfile}]`)
-  }
+
 
   // 📖 Column widths (generous spacing with margins)
   const W_RANK = 6
@@ -230,7 +226,7 @@ export function renderTable(results, pendingPings, frame, cursor = null, sortCol
   const sorted = sortResultsWithPinnedFavorites(visibleResults, sortColumn, sortDirection)
 
   const lines = [
-    `  ${chalk.cyanBright.bold(`🚀 free-coding-models v${LOCAL_VERSION}`)}${modeBadge}${pingControlBadge}${tierBadge}${originBadge}${profileBadge}${chalk.reset('')}   ` +
+    `  ${chalk.cyanBright.bold(`🚀 free-coding-models v${LOCAL_VERSION}`)}${modeBadge}${pingControlBadge}${tierBadge}${originBadge}${chalk.reset('')}   ` +
       chalk.dim('📦 ') + chalk.cyanBright.bold(`${completedPings}/${totalVisible}`) + chalk.dim('  ') +
       chalk.greenBright(`✅ ${up}`) + chalk.dim(' up  ') +
       chalk.yellow(`⏳ ${timeout}`) + chalk.dim(' timeout  ') +
@@ -590,12 +586,7 @@ export function renderTable(results, pendingPings, frame, cursor = null, sortCol
     lines.push(chalk.dim(`  ... ${sorted.length - vp.endIdx} more below ...`))
   }
 
-   // 📖 Profile save inline prompt — shown when Shift+S is pressed, replaces spacer line
-   if (profileSaveMode) {
-     lines.push(chalk.bgRgb(40, 20, 60)(`  📋 Save profile as: ${chalk.cyanBright(profileSaveBuffer + '▏')}  ${chalk.dim('Enter save  •  Esc cancel')}`))
-   } else {
-     lines.push('')
-   }
+   lines.push('')
   // 📖 Footer hints keep only navigation and secondary actions now that the
   // 📖 active tool target is already visible in the header badge.
   const hotkey = (keyLabel, text) => chalk.yellow(keyLabel) + chalk.dim(text)
@@ -624,11 +615,9 @@ export function renderTable(results, pendingPings, frame, cursor = null, sortCol
     chalk.dim(`  •  `) +
     hotkey('K', ' Help')
   )
-  // 📖 Line 2: profiles, install flow, recommend, proxy shortcut, feedback, and extended hints.
+  // 📖 Line 2: install flow, recommend, proxy shortcut, feedback, and extended hints.
   lines.push(
     chalk.dim(`  `) +
-    hotkey('⇧P', ' Cycle profile') + chalk.dim(`  •  `) +
-    hotkey('⇧S', ' Save profile') + chalk.dim(`  •  `) +
     hotkey('Y', ' Install endpoints') + chalk.dim(`  •  `) +
     hotkey('Q', ' Smart Recommend') + chalk.dim(`  •  `) +
     hotkey('I', ' Feedback, bugs & requests')

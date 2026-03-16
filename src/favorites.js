@@ -85,34 +85,20 @@ export function syncFavoriteFlags(results, config) {
  */
 export function toggleFavoriteModel(config, providerKey, modelId) {
   const latestConfig = loadConfig()
-  latestConfig.activeProfile = typeof config?.activeProfile === 'string' && config.activeProfile.trim()
-    ? config.activeProfile.trim()
-    : latestConfig.activeProfile
   ensureFavoritesConfig(latestConfig)
-  if (latestConfig.activeProfile && !latestConfig.profiles?.[latestConfig.activeProfile] && config?.profiles?.[latestConfig.activeProfile]) {
-    latestConfig.profiles[latestConfig.activeProfile] = JSON.parse(JSON.stringify(config.profiles[latestConfig.activeProfile]))
-  }
   const favoriteKey = toFavoriteKey(providerKey, modelId)
   const existingIndex = latestConfig.favorites.indexOf(favoriteKey)
   if (existingIndex >= 0) {
     latestConfig.favorites.splice(existingIndex, 1)
-    if (latestConfig.activeProfile && latestConfig.profiles?.[latestConfig.activeProfile]) {
-      latestConfig.profiles[latestConfig.activeProfile].favorites = [...latestConfig.favorites]
-    }
     const saveResult = saveConfig(latestConfig, {
       replaceFavorites: true,
-      replaceProfileNames: latestConfig.activeProfile ? [latestConfig.activeProfile] : [],
     })
     if (saveResult.success) replaceConfigContents(config, latestConfig)
     return false
   }
   latestConfig.favorites.push(favoriteKey)
-  if (latestConfig.activeProfile && latestConfig.profiles?.[latestConfig.activeProfile]) {
-    latestConfig.profiles[latestConfig.activeProfile].favorites = [...latestConfig.favorites]
-  }
   const saveResult = saveConfig(latestConfig, {
     replaceFavorites: true,
-    replaceProfileNames: latestConfig.activeProfile ? [latestConfig.activeProfile] : [],
   })
   if (saveResult.success) replaceConfigContents(config, latestConfig)
   return true

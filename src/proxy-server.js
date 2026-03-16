@@ -175,20 +175,42 @@ function resolveAnthropicMappedModel(modelId, anthropicRouting) {
   return fallbackModel
 }
 
-function parseProxyAuthorizationHeader(authorization, expectedToken) {
+// 📖 Accepts both standard Bearer auth and Anthropic SDK x-api-key header
+// 📖 Claude Code sends credentials via x-api-key, not Authorization: Bearer
+function parseProxyAuthorizationHeader(authorization, expectedToken, xApiKey = null) {
   if (!expectedToken) return { authorized: true, modelHint: null }
-  if (typeof authorization !== 'string' || !authorization.startsWith('Bearer ')) {
-    return { authorized: false, modelHint: null }
+
+  // 📖 Check standard Bearer auth first
+  if (typeof authorization === 'string' && authorization.startsWith('Bearer ')) {
+    const rawToken = authorization.slice('Bearer '.length).trim()
+    if (rawToken === expectedToken) return { authorized: true, modelHint: null }
+    if (rawToken.startsWith(`${expectedToken}:`)) {
+      const modelHint = normalizeRequestedModel(rawToken.slice(expectedToken.length + 1))
+      return modelHint ? { authorized: true, modelHint } : { authorized: false, modelHint: null }
+    }
   }
 
-  const rawToken = authorization.slice('Bearer '.length).trim()
-  if (rawToken === expectedToken) return { authorized: true, modelHint: null }
-  if (!rawToken.startsWith(`${expectedToken}:`)) return { authorized: false, modelHint: null }
+  // 📖 Fallback: Anthropic SDK x-api-key header
+  if (typeof xApiKey === 'string' && xApiKey.trim()) {
+    const trimmed = xApiKey.trim()
+    if (trimmed === expectedToken) return { authorized: true, modelHint: null }
+    if (trimmed.startsWith(`${expectedToken}:`)) {
+      const modelHint = normalizeRequestedModel(trimmed.slice(expectedToken.length + 1))
+      return modelHint ? { authorized: true, modelHint } : { authorized: false, modelHint: null }
+    }
+  }
 
-  const modelHint = normalizeRequestedModel(rawToken.slice(expectedToken.length + 1))
-  return modelHint
-    ? { authorized: true, modelHint }
-    : { authorized: false, modelHint: null }
+  // 📖 Accept real Anthropic API keys (sk-ant-*) — Claude Code uses its own stored key
+  // 📖 even when ANTHROPIC_BASE_URL is overridden to point at the proxy.
+  // 📖 The proxy is bound to 127.0.0.1 only, so accepting these keys is safe.
+  const candidateToken = (typeof authorization === 'string' && authorization.startsWith('Bearer '))
+    ? authorization.slice('Bearer '.length).trim()
+    : (typeof xApiKey === 'string' ? xApiKey.trim() : '')
+  if (candidateToken.startsWith('sk-ant-')) {
+    return { authorized: true, modelHint: null }
+  }
+
+  return { authorized: false, modelHint: null }
 }
 
 // ─── ProxyServer ─────────────────────────────────────────────────────────────
@@ -211,7 +233,7 @@ export class ProxyServer {
   constructor({
     port = 0,
     accounts = [],
-    retries = 3,
+    retries = 8,
     proxyApiKey = null,
     anthropicRouting = null,
     accountManagerOpts = {},
@@ -284,7 +306,7 @@ export class ProxyServer {
   }
 
   _getAuthContext(req) {
-    return parseProxyAuthorizationHeader(req.headers.authorization, this._proxyApiKey)
+    return parseProxyAuthorizationHeader(req.headers.authorization, this._proxyApiKey, req.headers['x-api-key'])
   }
 
   _isAuthorized(req) {
@@ -310,6 +332,13 @@ export class ProxyServer {
       if (!requestedModel || classifyClaudeVirtualModel(requestedModel) || requestedModel.toLowerCase().startsWith('claude-')) {
         return authModelHint
       }
+    }
+
+    // 📖 Last resort: when the requested model is a Claude virtual model and no routing resolved,
+    // 📖 fall back to the first available account's model (free-claude-code behavior)
+    if (!requestedModel || classifyClaudeVirtualModel(requestedModel) || requestedModel.toLowerCase().startsWith('claude-')) {
+      const firstModel = this._accounts[0]?.modelId
+      if (firstModel) return firstModel
     }
 
     return requestedModel

@@ -4,7 +4,7 @@
  *
  * @details
  *   This module encapsulates the full onKeyPress switch used by the TUI,
- *   including settings navigation, install-endpoint flow, overlays, profile management, and
+ *   including settings navigation, install-endpoint flow, overlays, and
  *   tool launch actions. It also keeps the live key bindings aligned with the
  *   highlighted letters shown in the table headers.
  *
@@ -153,7 +153,7 @@ export function buildProviderTestDetail(providerLabel, outcome, attempts = [], d
 }
 
 export function createKeyHandler(ctx) {
-  const {
+    const {
     state,
     exit,
     cliArgs,
@@ -165,11 +165,6 @@ export function createKeyHandler(ctx) {
     addApiKey,
     removeApiKey,
     isProviderEnabled,
-    listProfiles,
-    loadProfile,
-    deleteProfile,
-    saveAsProfile,
-    setActiveProfile,
     saveConfig,
     persistApiKeysForProvider,
     getConfiguredInstallableProviders,
@@ -382,46 +377,7 @@ export function createKeyHandler(ctx) {
     if (!key) return
     noteUserActivity()
 
-    // 📖 Profile save mode: intercept ALL keys while inline name input is active.
-    // 📖 Enter → save, Esc → cancel, Backspace → delete char, printable → append to buffer.
-    if (state.profileSaveMode) {
-      if (key.ctrl && key.name === 'c') { exit(0); return }
-      if (key.name === 'escape') {
-        // 📖 Cancel profile save — discard typed name
-        state.profileSaveMode = false
-        state.profileSaveBuffer = ''
-        return
-      }
-      if (key.name === 'return') {
-        // 📖 Confirm profile save — persist current TUI settings under typed name
-        const name = state.profileSaveBuffer.trim()
-        if (name.length > 0) {
-          saveAsProfile(state.config, name, {
-            tierFilter: TIER_CYCLE[state.tierFilterMode],
-            sortColumn: state.sortColumn,
-            sortAsc: state.sortDirection === 'asc',
-            pingInterval: state.pingInterval,
-            hideUnconfiguredModels: state.hideUnconfiguredModels,
-            proxy: getProxySettings(state.config),
-          })
-          setActiveProfile(state.config, name)
-          state.activeProfile = name
-          saveConfig(state.config, { replaceProfileNames: [name] })
-        }
-        state.profileSaveMode = false
-        state.profileSaveBuffer = ''
-        return
-      }
-      if (key.name === 'backspace') {
-        state.profileSaveBuffer = state.profileSaveBuffer.slice(0, -1)
-        return
-      }
-      // 📖 Append printable characters (str is the raw character typed)
-      if (str && str.length === 1 && !key.ctrl && !key.meta) {
-        state.profileSaveBuffer += str
-      }
-      return
-    }
+    // 📖 Profile system removed - API keys now persist permanently across all sessions
 
     // 📖 Install Endpoints overlay: provider → tool → connection → scope → optional model subset.
     if (state.installEndpointsOpen) {
@@ -964,10 +920,8 @@ const updateRowIdx = providerKeys.length
        const widthWarningRowIdx = updateRowIdx + 1
        const proxyDaemonRowIdx = widthWarningRowIdx + 1
        const changelogViewRowIdx = proxyDaemonRowIdx + 1
-       // 📖 Profile rows start after maintenance + width warning + proxy/daemon + changelog
-       const savedProfiles = listProfiles(state.config)
-       const profileStartIdx = updateRowIdx + 5
-       const maxRowIdx = savedProfiles.length > 0 ? profileStartIdx + savedProfiles.length - 1 : changelogViewRowIdx
+        // 📖 Profile system removed - API keys now persist permanently across all sessions
+        const maxRowIdx = changelogViewRowIdx
 
       // 📖 Edit/Add-key mode: capture typed characters for the API key
       if (state.settingsEditMode || state.settingsAddKeyMode) {
@@ -1114,7 +1068,7 @@ const updateRowIdx = providerKeys.length
         if (state.settingsCursor === widthWarningRowIdx) {
           if (!state.config.settings) state.config.settings = {}
           state.config.settings.disableWidthsWarning = !state.config.settings.disableWidthsWarning
-          saveConfig(state.config, { replaceProfileNames: state.activeProfile ? [state.activeProfile] : [] })
+          saveConfig(state.config)
           return
         }
 
@@ -1146,35 +1100,7 @@ const updateRowIdx = providerKeys.length
           return
         }
 
-        // 📖 Profile row: Enter → load the selected profile (apply its settings live)
-        if (state.settingsCursor >= profileStartIdx && savedProfiles.length > 0) {
-          const profileIdx = state.settingsCursor - profileStartIdx
-          const profileName = savedProfiles[profileIdx]
-          if (profileName) {
-            const settings = loadProfile(state.config, profileName)
-            if (settings) {
-              state.sortColumn = settings.sortColumn || 'avg'
-              state.sortDirection = settings.sortAsc ? 'asc' : 'desc'
-              setPingMode(intervalToPingMode(settings.pingInterval || PING_INTERVAL), 'manual')
-              if (settings.tierFilter) {
-                const tierIdx = TIER_CYCLE.indexOf(settings.tierFilter)
-                if (tierIdx >= 0) state.tierFilterMode = tierIdx
-              } else {
-                state.tierFilterMode = 0
-              }
-              state.activeProfile = profileName
-              syncFavoriteFlags(state.results, state.config)
-              applyTierFilter()
-              const visible = state.results.filter(r => !r.hidden)
-              state.visibleSorted = sortResultsWithPinnedFavorites(visible, state.sortColumn, state.sortDirection)
-              saveConfig(state.config, {
-                replaceApiKeys: true,
-                replaceFavorites: true,
-              })
-            }
-          }
-          return
-        }
+        // 📖 Profile system removed - API keys now persist permanently across all sessions
 
         // 📖 Enter edit mode for the selected provider's key
         const pk = providerKeys[state.settingsCursor]
@@ -1190,25 +1116,23 @@ const updateRowIdx = providerKeys.length
         if (state.settingsCursor === widthWarningRowIdx) {
           if (!state.config.settings) state.config.settings = {}
           state.config.settings.disableWidthsWarning = !state.config.settings.disableWidthsWarning
-          saveConfig(state.config, { replaceProfileNames: state.activeProfile ? [state.activeProfile] : [] })
+          saveConfig(state.config)
           return
         }
-        // 📖 Profile rows don't respond to Space
-        if (state.settingsCursor >= profileStartIdx) return
+        // 📖 Profile system removed - API keys now persist permanently across all sessions
 
         // 📖 Toggle enabled/disabled for selected provider
         const pk = providerKeys[state.settingsCursor]
         if (!state.config.providers) state.config.providers = {}
         if (!state.config.providers[pk]) state.config.providers[pk] = { enabled: true }
         state.config.providers[pk].enabled = !isProviderEnabled(state.config, pk)
-        saveConfig(state.config, { replaceProfileNames: state.activeProfile ? [state.activeProfile] : [] })
+        saveConfig(state.config)
         return
       }
 
       if (key.name === 't') {
         if (state.settingsCursor === updateRowIdx || state.settingsCursor === proxyDaemonRowIdx || state.settingsCursor === changelogViewRowIdx) return
-        // 📖 Profile rows don't respond to T (test key)
-        if (state.settingsCursor >= profileStartIdx) return
+        // 📖 Profile system removed - API keys now persist permanently across all sessions
 
         // 📖 Test the selected provider's key (fires a real ping)
         const pk = providerKeys[state.settingsCursor]
@@ -1221,27 +1145,7 @@ const updateRowIdx = providerKeys.length
         return
       }
 
-      // 📖 Backspace on a profile row → delete that profile
-      if (key.name === 'backspace' && state.settingsCursor >= profileStartIdx && savedProfiles.length > 0) {
-        const profileIdx = state.settingsCursor - profileStartIdx
-        const profileName = savedProfiles[profileIdx]
-        if (profileName) {
-          deleteProfile(state.config, profileName)
-          // 📖 If the deleted profile was active, clear active state
-          if (state.activeProfile === profileName) {
-            setActiveProfile(state.config, null)
-            state.activeProfile = null
-          }
-          saveConfig(state.config, { removedProfileNames: [profileName] })
-          // 📖 Re-clamp cursor after deletion (profile list just got shorter)
-          const newProfiles = listProfiles(state.config)
-          const newMaxRowIdx = newProfiles.length > 0 ? profileStartIdx + newProfiles.length - 1 : changelogViewRowIdx
-          if (state.settingsCursor > newMaxRowIdx) {
-            state.settingsCursor = Math.max(0, newMaxRowIdx)
-          }
-        }
-        return
-      }
+        // 📖 Profile system removed - API keys now persist permanently across all sessions
 
       if (key.ctrl && key.name === 'c') { exit(0); return }
 
@@ -1343,7 +1247,7 @@ const updateRowIdx = providerKeys.length
           }
           if (!state.config.settings) state.config.settings = {}
           state.config.settings.proxy = { ...proxySettings, preferredPort: parsed }
-          saveConfig(state.config, { replaceProfileNames: state.activeProfile ? [state.activeProfile] : [] })
+          saveConfig(state.config)
           state.settingsProxyPortEditMode = false
           state.settingsProxyPortBuffer = ''
           state.proxyDaemonMessage = { type: 'success', msg: `✅ Preferred port saved: ${parsed === 0 ? 'auto' : parsed}`, ts: Date.now() }
@@ -1384,7 +1288,7 @@ const updateRowIdx = providerKeys.length
         if (state.proxyDaemonCursor === ROW_PROXY_ENABLED) {
           if (!state.config.settings) state.config.settings = {}
           state.config.settings.proxy = { ...proxySettings, enabled: !proxySettings.enabled }
-          saveConfig(state.config, { replaceProfileNames: state.activeProfile ? [state.activeProfile] : [] })
+          saveConfig(state.config)
           state.proxyDaemonMessage = { type: 'success', msg: `✅ Proxy mode ${state.config.settings.proxy.enabled ? 'enabled' : 'disabled'}`, ts: Date.now() }
           return
         }
@@ -1395,7 +1299,7 @@ const updateRowIdx = providerKeys.length
           }
           if (!state.config.settings) state.config.settings = {}
           state.config.settings.proxy = { ...proxySettings, syncToOpenCode: !proxySettings.syncToOpenCode }
-          saveConfig(state.config, { replaceProfileNames: state.activeProfile ? [state.activeProfile] : [] })
+          saveConfig(state.config)
           const { getToolMeta } = await import('./tool-metadata.js')
           const toolLabel = getToolMeta(currentProxyTool).label
           state.proxyDaemonMessage = { type: 'success', msg: `✅ Auto-sync to ${toolLabel} ${state.config.settings.proxy.syncToOpenCode ? 'enabled' : 'disabled'}`, ts: Date.now() }
@@ -1411,7 +1315,7 @@ const updateRowIdx = providerKeys.length
         if (state.proxyDaemonCursor === ROW_PROXY_ENABLED) {
           if (!state.config.settings) state.config.settings = {}
           state.config.settings.proxy = { ...proxySettings, enabled: !proxySettings.enabled }
-          saveConfig(state.config, { replaceProfileNames: state.activeProfile ? [state.activeProfile] : [] })
+          saveConfig(state.config)
           state.proxyDaemonMessage = { type: 'success', msg: `✅ Proxy mode ${state.config.settings.proxy.enabled ? 'enabled' : 'disabled'}`, ts: Date.now() }
           return
         }
@@ -1424,7 +1328,7 @@ const updateRowIdx = providerKeys.length
           }
           if (!state.config.settings) state.config.settings = {}
           state.config.settings.proxy = { ...proxySettings, syncToOpenCode: !proxySettings.syncToOpenCode }
-          saveConfig(state.config, { replaceProfileNames: state.activeProfile ? [state.activeProfile] : [] })
+          saveConfig(state.config)
           const { getToolMeta } = await import('./tool-metadata.js')
           const toolLabel = getToolMeta(currentProxyTool).label
           state.proxyDaemonMessage = { type: 'success', msg: `✅ Auto-sync to ${toolLabel} ${state.config.settings.proxy.syncToOpenCode ? 'enabled' : 'disabled'}`, ts: Date.now() }
@@ -1474,7 +1378,7 @@ const updateRowIdx = providerKeys.length
             if (!state.config.settings.proxy.preferredPort || state.config.settings.proxy.preferredPort === 0) {
               state.config.settings.proxy.preferredPort = 18045
             }
-            saveConfig(state.config, { replaceProfileNames: state.activeProfile ? [state.activeProfile] : [] })
+            saveConfig(state.config)
             const result = installDaemon()
             if (result.success) {
               state.proxyDaemonMessage = { type: 'success', msg: '✅ FCM Proxy V2 background service installed and started!', ts: Date.now() }
@@ -1488,7 +1392,7 @@ const updateRowIdx = providerKeys.length
             // 📖 Uninstall daemon
             const result = uninstallDaemon()
             state.config.settings.proxy.daemonEnabled = false
-            saveConfig(state.config, { replaceProfileNames: state.activeProfile ? [state.activeProfile] : [] })
+            saveConfig(state.config)
             if (result.success) {
               state.proxyDaemonMessage = { type: 'success', msg: '✅ FCM Proxy V2 background service uninstalled.', ts: Date.now() }
               state.daemonStatus = 'not-installed'
@@ -1632,70 +1536,9 @@ const updateRowIdx = providerKeys.length
       return
     }
 
-    // 📖 Shift+P: cycle through profiles (or show profile picker)
-    if (key.name === 'p' && key.shift) {
-      const profiles = listProfiles(state.config)
-      if (profiles.length === 0) {
-        // 📖 No profiles saved — save current config as 'default' profile
-        saveAsProfile(state.config, 'default', {
-          tierFilter: TIER_CYCLE[state.tierFilterMode],
-          sortColumn: state.sortColumn,
-          sortAsc: state.sortDirection === 'asc',
-          pingInterval: state.pingInterval,
-          hideUnconfiguredModels: state.hideUnconfiguredModels,
-          proxy: getProxySettings(state.config),
-        })
-        setActiveProfile(state.config, 'default')
-        state.activeProfile = 'default'
-        saveConfig(state.config, { replaceProfileNames: ['default'] })
-      } else {
-        // 📖 Cycle to next profile (or back to null = raw config)
-        const currentIdx = state.activeProfile ? profiles.indexOf(state.activeProfile) : -1
-        const nextIdx = (currentIdx + 1) % (profiles.length + 1) // +1 for "no profile"
-        if (nextIdx === profiles.length) {
-          // 📖 Back to raw config (no profile)
-          setActiveProfile(state.config, null)
-          state.activeProfile = null
-          saveConfig(state.config)
-        } else {
-          const nextProfile = profiles[nextIdx]
-          const settings = loadProfile(state.config, nextProfile)
-          if (settings) {
-            // 📖 Apply profile's TUI settings to live state
-            state.sortColumn = settings.sortColumn || 'avg'
-            state.sortDirection = settings.sortAsc ? 'asc' : 'desc'
-            setPingMode(intervalToPingMode(settings.pingInterval || PING_INTERVAL), 'manual')
-            if (settings.tierFilter) {
-              const tierIdx = TIER_CYCLE.indexOf(settings.tierFilter)
-              if (tierIdx >= 0) state.tierFilterMode = tierIdx
-            } else {
-              state.tierFilterMode = 0
-            }
-            state.hideUnconfiguredModels = settings.hideUnconfiguredModels === true
-            state.activeProfile = nextProfile
-            // 📖 Rebuild favorites from profile data
-            syncFavoriteFlags(state.results, state.config)
-            applyTierFilter()
-            const visible = state.results.filter(r => !r.hidden)
-            state.visibleSorted = sortResultsWithPinnedFavorites(visible, state.sortColumn, state.sortDirection)
-            state.cursor = 0
-            state.scrollOffset = 0
-            saveConfig(state.config, {
-              replaceApiKeys: true,
-              replaceFavorites: true,
-            })
-          }
-        }
-      }
-      return
-    }
+    // 📖 Profile system removed - API keys now persist permanently across all sessions
 
-    // 📖 Shift+S: enter profile save mode — inline text prompt for typing a profile name
-    if (key.name === 's' && key.shift) {
-      state.profileSaveMode = true
-      state.profileSaveBuffer = ''
-      return
-    }
+    // 📖 Profile system removed - API keys now persist permanently across all sessions
 
     // 📖 Helper: persist current UI view settings (tier, provider, sort) to config.settings
     // 📖 Called after every T / D / sort key so preferences survive session restarts.
@@ -1705,16 +1548,7 @@ const updateRowIdx = providerKeys.length
       state.config.settings.originFilter = ORIGIN_CYCLE[state.originFilterMode] ?? null
       state.config.settings.sortColumn = state.sortColumn
       state.config.settings.sortAsc = state.sortDirection === 'asc'
-      // 📖 Mirror into active profile too so profile captures live preferences
-      if (state.activeProfile && state.config.profiles?.[state.activeProfile]) {
-        const profile = state.config.profiles[state.activeProfile]
-        if (!profile.settings || typeof profile.settings !== 'object') profile.settings = {}
-        profile.settings.tierFilter = state.config.settings.tierFilter
-        profile.settings.originFilter = state.config.settings.originFilter
-        profile.settings.sortColumn = state.config.settings.sortColumn
-        profile.settings.sortAsc = state.config.settings.sortAsc
-      }
-      saveConfig(state.config, { replaceProfileNames: state.activeProfile ? [state.activeProfile] : [] })
+      saveConfig(state.config)
     }
 
     // 📖 Shift+R: reset all UI view settings to defaults (tier, sort, provider) and clear persisted config
@@ -1728,17 +1562,7 @@ const updateRowIdx = providerKeys.length
       delete state.config.settings.originFilter
       delete state.config.settings.sortColumn
       delete state.config.settings.sortAsc
-      // 📖 Also clear in active profile if loaded
-      if (state.activeProfile && state.config.profiles?.[state.activeProfile]) {
-        const profile = state.config.profiles[state.activeProfile]
-        if (profile.settings) {
-          delete profile.settings.tierFilter
-          delete profile.settings.originFilter
-          delete profile.settings.sortColumn
-          delete profile.settings.sortAsc
-        }
-      }
-      saveConfig(state.config, { replaceProfileNames: state.activeProfile ? [state.activeProfile] : [] })
+      saveConfig(state.config)
       applyTierFilter()
       const visible = state.results.filter(r => !r.hidden)
       state.visibleSorted = sortResultsWithPinnedFavorites(visible, state.sortColumn, state.sortDirection)
@@ -1835,17 +1659,12 @@ const updateRowIdx = providerKeys.length
     }
 
     // 📖 E toggles hiding models whose provider has no configured API key.
-    // 📖 The preference is saved globally and mirrored into the active profile.
+    // 📖 The preference is saved globally.
     if (key.name === 'e') {
       state.hideUnconfiguredModels = !state.hideUnconfiguredModels
       if (!state.config.settings || typeof state.config.settings !== 'object') state.config.settings = {}
       state.config.settings.hideUnconfiguredModels = state.hideUnconfiguredModels
-      if (state.activeProfile && state.config.profiles?.[state.activeProfile]) {
-        const profile = state.config.profiles[state.activeProfile]
-        if (!profile.settings || typeof profile.settings !== 'object') profile.settings = {}
-        profile.settings.hideUnconfiguredModels = state.hideUnconfiguredModels
-      }
-      saveConfig(state.config, { replaceProfileNames: state.activeProfile ? [state.activeProfile] : [] })
+      saveConfig(state.config)
       applyTierFilter()
       const visible = state.results.filter(r => !r.hidden)
       state.visibleSorted = sortResultsWithPinnedFavorites(visible, state.sortColumn, state.sortDirection)
@@ -1907,12 +1726,7 @@ const updateRowIdx = providerKeys.length
       state.mode = modeOrder[nextIndex]
       if (!state.config.settings || typeof state.config.settings !== 'object') state.config.settings = {}
       state.config.settings.preferredToolMode = state.mode
-      if (state.activeProfile && state.config.profiles?.[state.activeProfile]) {
-        const profile = state.config.profiles[state.activeProfile]
-        if (!profile.settings || typeof profile.settings !== 'object') profile.settings = {}
-        profile.settings.preferredToolMode = state.mode
-      }
-      saveConfig(state.config, { replaceProfileNames: state.activeProfile ? [state.activeProfile] : [] })
+      saveConfig(state.config)
       return
     }
 

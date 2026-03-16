@@ -38,7 +38,6 @@ export function createOverlayRenderers(state, deps) {
     getProxySettings,
     resolveApiKeys,
     isProviderEnabled,
-    listProfiles,
     TIER_CYCLE,
     SETTINGS_OVERLAY_BG,
     HELP_OVERLAY_BG,
@@ -310,33 +309,7 @@ const updateRowIdx = providerKeys.length
     cursorLineByRow[changelogViewRowIdx] = lines.length
     lines.push(state.settingsCursor === changelogViewRowIdx ? chalk.bgRgb(30, 45, 30)(changelogViewRow) : changelogViewRow)
 
-    // 📖 Profiles section — list saved profiles with active indicator + delete support
-    const savedProfiles = listProfiles(state.config)
-const profileStartIdx = updateRowIdx + 5
-      const maxRowIdx = savedProfiles.length > 0 ? profileStartIdx + savedProfiles.length - 1 : changelogViewRowIdx
-
-    lines.push('')
-    lines.push(`  ${chalk.bold('📋 Profiles')}  ${chalk.dim(savedProfiles.length > 0 ? `(${savedProfiles.length} saved)` : '(none — press Shift+S in main view to save)')}`)
-    lines.push(`  ${chalk.dim('  ' + '─'.repeat(separatorWidth))}`)
-    lines.push('')
-
-    if (savedProfiles.length === 0) {
-      lines.push(chalk.dim('    No saved profiles. Press Shift+S in the main table to save your current settings as a profile.'))
-    } else {
-      for (let i = 0; i < savedProfiles.length; i++) {
-        const pName = savedProfiles[i]
-        const rowIdx = profileStartIdx + i
-        const isCursor = state.settingsCursor === rowIdx
-        const isActive = state.activeProfile === pName
-        const activeBadge = isActive ? chalk.greenBright(' ✅ active') : ''
-        const bullet = isCursor ? chalk.bold.cyan('  ❯ ') : chalk.dim('    ')
-        const profileLabel = chalk.rgb(200, 150, 255).bold(pName.padEnd(30))
-        const deleteHint = isCursor ? chalk.dim('  Enter→Load  •  Backspace→Delete') : ''
-        const row = `${bullet}${profileLabel}${activeBadge}${deleteHint}`
-        cursorLineByRow[rowIdx] = lines.length
-        lines.push(isCursor ? chalk.bgRgb(40, 20, 60)(row) : row)
-      }
-    }
+    // 📖 Profile system removed - API keys now persist permanently across all sessions
 
     lines.push('')
     if (state.settingsEditMode) {
@@ -344,7 +317,7 @@ const profileStartIdx = updateRowIdx + 5
     } else if (state.settingsProxyPortEditMode) {
       lines.push(chalk.dim('  Type proxy port (0 = auto)  •  Enter Save  •  Esc Cancel'))
     } else {
-      lines.push(chalk.dim('  ↑↓ Navigate  •  Enter Edit/Run  •  + Add key  •  - Remove key  •  Space Toggle  •  T Test key  •  S Sync→OpenCode  •  R Restore backup  •  U Updates  •  ⌫ Delete profile  •  Esc Close'))
+      lines.push(chalk.dim('  ↑↓ Navigate  •  Enter Edit/Run  •  + Add key  •  - Remove key  •  Space Toggle  •  T Test key  •  S Sync→OpenCode  •  R Restore backup  •  U Updates  •  Esc Close'))
     }
     // 📖 Show sync/restore status message if set
     if (state.settingsSyncStatus) {
@@ -630,7 +603,7 @@ const profileStartIdx = updateRowIdx + 5
     lines.push('')
     lines.push(`  ${chalk.bold('Controls')}`)
     lines.push(`  ${chalk.yellow('W')}  Toggle ping mode  ${chalk.dim('(speed 2s → normal 10s → slow 30s → forced 4s)')}`)
-    lines.push(`  ${chalk.yellow('E')}  Toggle configured models only  ${chalk.dim('(enabled by default, persisted globally + in profiles)')}`)
+    lines.push(`  ${chalk.yellow('E')}  Toggle configured models only  ${chalk.dim('(enabled by default)')}`)
     lines.push(`  ${chalk.yellow('X')}  Toggle token log page  ${chalk.dim('(shows recent request usage from request-log.jsonl)')}`)
     lines.push(`  ${chalk.yellow('Z')}  Cycle tool mode  ${chalk.dim('(OpenCode → Desktop → OpenClaw → Crush → Goose → Pi → Aider → Claude Code → Codex → Gemini → Qwen → OpenHands → Amp)')}`)
     lines.push(`  ${chalk.yellow('F')}  Toggle favorite on selected row  ${chalk.dim('(⭐ pinned at top, persisted)')}`)
@@ -639,10 +612,7 @@ const profileStartIdx = updateRowIdx + 5
     lines.push(`  ${chalk.rgb(255, 87, 51).bold('I')}  Feedback, bugs & requests  ${chalk.dim('(📝 send anonymous feedback, bug reports, or feature requests)')}`)
     lines.push(`  ${chalk.yellow('J')}  FCM Proxy V2 settings  ${chalk.dim('(📡 open proxy configuration and background service management)')}`)
     lines.push(`  ${chalk.yellow('P')}  Open settings  ${chalk.dim('(manage API keys, provider toggles, proxy, manual update)')}`)
-    lines.push(`  ${chalk.yellow('Shift+P')}  Cycle config profile  ${chalk.dim('(switch between saved profiles live)')}`)
-    lines.push(`  ${chalk.yellow('Shift+S')}  Save current config as a named profile  ${chalk.dim('(inline prompt — type name + Enter)')}`)
-    lines.push(`             ${chalk.dim('Profiles store: favorites, sort, tier filter, ping interval, configured-only filter, API keys.')}`)
-    lines.push(`             ${chalk.dim('Use --profile <name> to load a profile on startup.')}`)
+      // 📖 Profile system removed - API keys now persist permanently across all sessions
     lines.push(`  ${chalk.yellow('Shift+R')}  Reset view settings  ${chalk.dim('(tier filter, sort, provider filter → defaults)')}`)
     lines.push(`  ${chalk.yellow('N')}  Changelog  ${chalk.dim('(📋 browse all versions, Enter to view details)')}`)
     lines.push(`  ${chalk.yellow('K')} / ${chalk.yellow('Esc')}  Show/hide this help`)
