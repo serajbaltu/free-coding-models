@@ -2523,9 +2523,6 @@ export function createMouseEventHandler(ctx) {
           state.cursor = 0
           state.scrollOffset = 0
           persistUiSettings()
-        } else if (col.name === 'compat') {
-          // 📖 Clicking the Compat header cycles tool mode (same as Z key)
-          cycleToolMode()
         }
       }
       return

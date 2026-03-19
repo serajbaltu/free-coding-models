@@ -50,7 +50,7 @@ import { TIER_COLOR } from './tier-colors.js'
 import { getAvg, getVerdict, getUptime, getStabilityScore, getVersionStatusInfo } from './utils.js'
 import { usagePlaceholderForProvider } from './ping.js'
 import { calculateViewport, sortResultsWithPinnedFavorites, padEndDisplay, displayWidth } from './render-helpers.js'
-import { getToolMeta, TOOL_METADATA, TOOL_MODE_ORDER, COMPAT_COLUMN_SLOTS, getCompatibleTools, isModelCompatibleWithTool } from './tool-metadata.js'
+import { getToolMeta, TOOL_METADATA, TOOL_MODE_ORDER, isModelCompatibleWithTool } from './tool-metadata.js'
 import { getColumnSpacing } from './ui-config.js'
 
 const require = createRequire(import.meta.url)
@@ -88,7 +88,6 @@ const COLUMN_SORT_MAP = {
   verdict: 'verdict',
   stability: 'stability',
   uptime: 'uptime',
-  compat: null, // 📖 Compat column is not sortable
 }
 export { COLUMN_SORT_MAP }
 
@@ -196,7 +195,7 @@ export function renderTable(results, pendingPings, frame, cursor = null, sortCol
   const W_STATUS = 18
   const W_VERDICT = 14
   const W_UPTIME = 6
-  const W_COMPAT = 22 // 📖 "Compatible with" column — 11 emoji slots (10×2 + 1×1 for π + 1 padding)
+
   // const W_TOKENS = 7 // Used column removed
   // const W_USAGE = 7 // Usage column removed
   const MIN_TABLE_WIDTH = WIDTH_WARNING_MIN_COLS
@@ -216,7 +215,6 @@ export function renderTable(results, pendingPings, frame, cursor = null, sortCol
   let showUptime = true
   let showTier = true
   let showStability = true
-  let showCompat = true // 📖 "Compatible with" column — hidden on narrow terminals
   let isCompact = false
 
   if (terminalCols > 0) {
@@ -228,7 +226,6 @@ export function renderTable(results, pendingPings, frame, cursor = null, sortCol
       cols.push(W_SWE, W_CTX, W_MODEL, wSource, wPing, wAvg, wStatus, W_VERDICT)
       if (showStability) cols.push(wStab)
       if (showUptime) cols.push(W_UPTIME)
-      if (showCompat) cols.push(W_COMPAT)
       return ROW_MARGIN + cols.reduce((a, b) => a + b, 0) + (cols.length - 1) * SEP_W
     }
 
@@ -242,7 +239,6 @@ export function renderTable(results, pendingPings, frame, cursor = null, sortCol
       wStatus = 13   // Health truncated after 6 chars + '…'
     }
     // 📖 Steps 2–5: Progressive column hiding (least useful first)
-    if (calcWidth() > terminalCols) showCompat = false
     if (calcWidth() > terminalCols) showRank = false
     if (calcWidth() > terminalCols) showUptime = false
     if (calcWidth() > terminalCols) showTier = false
@@ -266,8 +262,6 @@ export function renderTable(results, pendingPings, frame, cursor = null, sortCol
     colDefs.push({ name: 'verdict', width: W_VERDICT })
     if (showStability) colDefs.push({ name: 'stability', width: wStab })
     if (showUptime) colDefs.push({ name: 'uptime', width: W_UPTIME })
-    if (showCompat) colDefs.push({ name: 'compat', width: W_COMPAT })
-
     let x = ROW_MARGIN + 1 // 📖 1-based: first column starts after the 2-char left margin
     const columns = []
     for (let i = 0; i < colDefs.length; i++) {
@@ -394,13 +388,7 @@ export function renderTable(results, pendingPings, frame, cursor = null, sortCol
     const padding = ' '.repeat(Math.max(0, W_UPTIME - plain.length))
     return themeColors.hotkey('U') + themeColors.dim('p%' + padding)
   })()
-  // 📖 "CLI Tools" column header — plain text label with Z hotkey highlighted
-  const compatH_c = (() => {
-    const label = 'CLI Tools'
-    const padding = ' '.repeat(Math.max(0, W_COMPAT - label.length))
-    // 📖 No single-letter hotkey in "CLI Tools" maps to Z, so just dim the full label.
-    return themeColors.dim(label + padding)
-  })()
+
   // 📖 Usage column removed from UI – no header or separator for it.
   // 📖 Header row: conditionally include columns based on responsive visibility
   const headerParts = []
@@ -409,7 +397,6 @@ export function renderTable(results, pendingPings, frame, cursor = null, sortCol
   headerParts.push(sweH_c, ctxH_c, modelH_c, originH_c, pingH_c, avgH_c, healthH_c, verdictH_c)
   if (showStability) headerParts.push(stabH_c)
   if (showUptime) headerParts.push(uptimeH_c)
-  if (showCompat) headerParts.push(compatH_c)
   lines.push('  ' + headerParts.join(COL_SEP))
 
   // 📖 Mouse support: the column header row is the last line we just pushed.
@@ -680,27 +667,6 @@ export function renderTable(results, pendingPings, frame, cursor = null, sortCol
     const sourceCursorText = providerDisplay.padEnd(wSource)
     const sourceCell = isCursor ? themeColors.provider(r.providerKey, sourceCursorText, { bold: true }) : source
 
-    // 📖 "Compatible with" column — show colored emojis for compatible tools
-    // 📖 Each slot in COMPAT_COLUMN_SLOTS maps to one or more tool keys.
-    // 📖 OpenCode CLI + Desktop are merged into a single 📦 slot.
-    // 📖 Left-aligned: only compatible tool emojis are shown, packed to the left.
-    let compatCell = ''
-    if (showCompat) {
-      const compatTools = getCompatibleTools(r.providerKey)
-      let compatDisplayWidth = 0
-      const emojiParts = []
-      for (const slot of COMPAT_COLUMN_SLOTS) {
-        const isCompat = slot.toolKeys.some(tk => compatTools.includes(tk))
-        if (isCompat) {
-          emojiParts.push(chalk.rgb(...slot.color)(slot.emoji))
-          compatDisplayWidth += displayWidth(slot.emoji)
-        }
-      }
-      // 📖 Pad remaining width with spaces to fill W_COMPAT
-      const extraPad = Math.max(0, W_COMPAT - compatDisplayWidth)
-      compatCell = emojiParts.join('') + ' '.repeat(extraPad)
-    }
-
     // 📖 Check if this model is incompatible with the active tool mode
     const isIncompatible = !isModelCompatibleWithTool(r.providerKey, mode)
 
@@ -715,7 +681,6 @@ export function renderTable(results, pendingPings, frame, cursor = null, sortCol
     rowParts.push(sweCell, ctxCell, nameCell, sourceCell, pingCell, avgCell, status, speedCell)
     if (showStability) rowParts.push(stabCell)
     if (showUptime) rowParts.push(uptimeCell)
-    if (showCompat) rowParts.push(compatCell)
     const row = '  ' + rowParts.join(COL_SEP)
 
     if (isCursor) {

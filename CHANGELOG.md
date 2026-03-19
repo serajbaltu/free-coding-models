@@ -1,6 +1,12 @@
 # Changelog
 ---
 
+## [0.3.25] - 2026-03-19
+
+### Changed
+- **Removed "CLI Tools" column** — The compat emoji column has been removed from the TUI table, freeing ~22 characters of horizontal space for other columns
+- **Cleaner table layout** — Responsive column hiding no longer needs to drop the compat column first on narrow terminals
+
 ## [0.3.24] - 2026-03-19
 
 ### Added

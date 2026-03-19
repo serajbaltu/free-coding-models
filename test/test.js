@@ -3135,10 +3135,6 @@ describe('COLUMN_SORT_MAP', () => {
     assert.equal(COLUMN_SORT_MAP.tier, null)
   })
 
-  it('maps compat column to null (triggers Z tool cycle, not sort)', () => {
-    assert.equal(COLUMN_SORT_MAP.compat, null)
-  })
-
   it('maps swe column to swe sort key', () => {
     assert.equal(COLUMN_SORT_MAP.swe, 'swe')
   })
@@ -3180,7 +3176,7 @@ describe('COLUMN_SORT_MAP', () => {
   })
 
   it('has entries for all expected columns', () => {
-    const expected = ['rank', 'tier', 'swe', 'ctx', 'model', 'source', 'ping', 'avg', 'health', 'verdict', 'stability', 'uptime', 'compat']
+    const expected = ['rank', 'tier', 'swe', 'ctx', 'model', 'source', 'ping', 'avg', 'health', 'verdict', 'stability', 'uptime']
     for (const col of expected) {
       assert.ok(col in COLUMN_SORT_MAP, `missing column: ${col}`)
     }

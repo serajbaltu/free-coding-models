@@ -214,7 +214,7 @@ To use Zen models: sign up at [opencode.ai/auth](https://opencode.ai/auth) and e
 
 ### Tool Compatibility
 
-The TUI shows a **"Compatible with"** column displaying colored emojis for each supported tool. When a tool mode is active (via `Z`), models incompatible with that tool are highlighted with a dark red background so you can instantly see which models work with your current tool.
+When a tool mode is active (via `Z`), models incompatible with that tool are highlighted with a dark red background so you can instantly see which models work with your current tool.
 
 | Model Type | Compatible Tools |
 |------------|-----------------|
@@ -268,7 +268,7 @@ The TUI shows a **"Compatible with"** column displaying colored emojis for each 
 - **⚡️ Command Palette** — `Ctrl+P` opens a searchable action launcher for filters, sorting, overlays, and quick toggles
 - **Install Endpoints** — push a full provider catalog into any tool's config (from Settings `P` or ⚡️ Command Palette)
 - **Missing tool bootstrap** — detect absent CLIs, offer one-click install, then continue the selected launch automatically
-- **Tool compatibility matrix** — colored emojis show which tools each model supports; incompatible rows highlighted in dark red when a tool mode is active
+- **Tool compatibility matrix** — incompatible rows highlighted in dark red when a tool mode is active
 - **OpenCode Zen models** — 8 free models exclusive to OpenCode CLI/Desktop, powered by the Zen AI gateway
 - **Width guardrail** — shows a warning instead of a broken table in narrow terminals
 - **Readable everywhere** — semantic theme palette keeps table rows, overlays, badges, and help screens legible in dark and light terminals
