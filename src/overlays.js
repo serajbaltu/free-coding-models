@@ -14,7 +14,7 @@
  *   📖 Feedback overlay (I key) combines feature requests + bug reports in one left-aligned input
  *
  *   → Functions:
- *   - `createOverlayRenderers` — returns renderer + analysis helpers
+ *   - `createOverlayRenderers` — returns renderer + analysis helpers + overlayLayout
  *
  * @exports { createOverlayRenderers }
  * @see ./key-handler.js — handles keypresses for all overlay interactions
@@ -83,6 +83,29 @@ export function createOverlayRenderers(state, deps) {
     }
     if (current) lines.push(current)
     return lines
+  }
+
+  // 📖 Overlay layout tracking: records cursor-to-line mappings and scroll offsets
+  // 📖 so the mouse handler can map terminal click coordinates → overlay cursor positions.
+  // 📖 Updated each render frame by the active overlay renderer.
+  const overlayLayout = {
+    settingsCursorToLine: {},   // 📖 cursor index → line index in pre-scroll lines array
+    settingsScrollOffset: 0,   // 📖 current scroll offset applied by sliceOverlayLines
+    settingsMaxRow: 0,         // 📖 maximum valid settingsCursor index
+    installEndpointsCursorToLine: {},
+    installEndpointsScrollOffset: 0,
+    installEndpointsMaxRow: 0,
+    commandPaletteCursorToLine: {},
+    commandPaletteScrollOffset: 0,
+    commandPaletteBodyStartRow: 0, // 📖 1-based terminal row where CP results begin
+    commandPaletteBodyRows: 0,
+    commandPaletteLeft: 0,
+    commandPaletteRight: 0,
+    commandPaletteTop: 0,
+    commandPaletteBottom: 0,
+    changelogCursorToLine: {},
+    changelogScrollOffset: 0,
+    recommendOptionRows: {},       // 📖 option index → 1-based terminal row (questionnaire phase)
   }
 
   // ─── Settings screen renderer ─────────────────────────────────────────────
@@ -286,6 +309,11 @@ export function createOverlayRenderers(state, deps) {
     )
     const { visible, offset } = sliceOverlayLines(lines, state.settingsScrollOffset, state.terminalRows)
     state.settingsScrollOffset = offset
+
+    // 📖 Mouse support: record layout so click handler can map Y → settingsCursor
+    overlayLayout.settingsCursorToLine = { ...cursorLineByRow }
+    overlayLayout.settingsScrollOffset = offset
+    overlayLayout.settingsMaxRow = changelogViewRowIdx
 
     const tintedLines = tintOverlayLines(visible, themeColors.overlayBgSettings, state.terminalCols)
     const cleared = tintedLines.map(l => l + EL)
@@ -684,6 +712,18 @@ export function createOverlayRenderers(state, deps) {
     const top = Math.max(1, Math.floor((terminalRows - panelHeight) / 2) + 1)
     const left = Math.max(1, Math.floor((terminalCols - panelOuterWidth) / 2) + 1)
 
+    // 📖 Mouse support: record CP layout so clicks inside the modal can select items.
+    // 📖 Body rows start after 2 blank-padding lines + headerLines (3).
+    const bodyStartRow = top + 2 + headerLines.length // 📖 1-based terminal row of first body line
+    overlayLayout.commandPaletteCursorToLine = { ...cursorLineByRow }
+    overlayLayout.commandPaletteScrollOffset = state.commandPaletteScrollOffset
+    overlayLayout.commandPaletteBodyStartRow = bodyStartRow
+    overlayLayout.commandPaletteBodyRows = bodyRows
+    overlayLayout.commandPaletteLeft = left
+    overlayLayout.commandPaletteRight = left + panelOuterWidth - 1
+    overlayLayout.commandPaletteTop = top
+    overlayLayout.commandPaletteBottom = top + panelHeight - 1
+
     const tintedLines = paddedPanelLines.map((line) => {
       const padded = padEndDisplay(line, panelOuterWidth)
       return themeColors.overlayBgCommandPalette(padded)
@@ -861,6 +901,10 @@ export function createOverlayRenderers(state, deps) {
         const opt = q.options[i]
         const isCursor = i === state.recommendCursor
         const label = isCursor ? themeColors.textBold(opt.label) : themeColors.text(opt.label)
+        // 📖 Mouse support: record the 1-based terminal row of each option
+        // 📖 lines.length is the 0-based index → +1 = 1-based row
+        overlayLayout.recommendOptionRows = overlayLayout.recommendOptionRows || {}
+        overlayLayout.recommendOptionRows[i] = lines.length + 1
         lines.push(`${bullet(isCursor)}${label}`)
       }
 
@@ -1206,6 +1250,21 @@ export function createOverlayRenderers(state, deps) {
     // 📖 Use scrolling with overlay handler
     const { visible, offset } = sliceOverlayLines(lines, state.changelogScrollOffset, state.terminalRows)
     state.changelogScrollOffset = offset
+
+    // 📖 Mouse support: record changelog layout for click-to-select versions
+    overlayLayout.changelogScrollOffset = offset
+    // 📖 In index phase, version items start at line 4 (header + blank + title + instructions)
+    // 📖 Each version occupies exactly one line. changelogCursorToLine maps cursor → line index.
+    if (state.changelogPhase === 'index') {
+      const map = {}
+      for (let i = 0; i < versionList.length; i++) {
+        map[i] = 4 + i // 📖 3 header-ish lines + 1 blank before version list
+      }
+      overlayLayout.changelogCursorToLine = map
+    } else {
+      overlayLayout.changelogCursorToLine = {}
+    }
+
     const tintedLines = tintOverlayLines(visible, themeColors.overlayBgChangelog, state.terminalCols)
     const cleared = tintedLines.map(l => l + EL)
     return cleared.join('\n')
@@ -1325,5 +1384,6 @@ export function createOverlayRenderers(state, deps) {
     renderIncompatibleFallback,
     startRecommendAnalysis,
     stopRecommendAnalysis,
+    overlayLayout,  // 📖 Mouse support: exposes cursor-to-line maps for click handling
   }
 }

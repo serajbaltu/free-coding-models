@@ -119,7 +119,8 @@ import { renderTable, PROVIDER_COLOR } from '../src/render-table.js'
 import { setOpenCodeModelData, startOpenCode, startOpenCodeDesktop } from '../src/opencode.js'
 import { startOpenClaw } from '../src/openclaw.js'
 import { createOverlayRenderers } from '../src/overlays.js'
-import { createKeyHandler } from '../src/key-handler.js'
+import { createKeyHandler, createMouseEventHandler } from '../src/key-handler.js'
+import { createMouseHandler, containsMouseSequence } from '../src/mouse.js'
 import { getToolModeOrder, getToolMeta } from '../src/tool-metadata.js'
 import { startExternalTool } from '../src/tool-launchers.js'
 import { getToolInstallPlan, installToolWithPlan, isToolInstalled } from '../src/tool-bootstrap.js'
@@ -495,6 +496,7 @@ export async function runApp(cliArgs, config) {
 
   let ticker = null
   let onKeyPress = null
+  let onMouseData = null  // 📖 Mouse data listener — set after createMouseEventHandler
   let pingModel = null
 
   const scheduleNextPing = () => {
@@ -736,6 +738,7 @@ export async function runApp(cliArgs, config) {
     if (ticker) clearInterval(ticker)
     clearTimeout(state.pingIntervalObj)
     if (onKeyPress) process.stdin.removeListener('keypress', onKeyPress)
+    if (onMouseData) process.stdin.removeListener('data', onMouseData)
     if (process.stdin.isTTY && resetRawMode) process.stdin.setRawMode(false)
     process.stdin.pause()
     process.stdout.write(ALT_LEAVE)
@@ -837,6 +840,38 @@ export async function runApp(cliArgs, config) {
     readline,
   })
 
+  // 📖 Mouse event handler: translates parsed mouse events into TUI actions (sort, cursor, scroll).
+  const onMouseEvent = createMouseEventHandler({
+    state,
+    adjustScrollOffset,
+    applyTierFilter,
+    TIER_CYCLE,
+    ORIGIN_CYCLE,
+    noteUserActivity,
+    sortResultsWithPinnedFavorites,
+    saveConfig,
+    overlayLayout: overlays.overlayLayout, // 📖 Overlay cursor-to-line maps for click handling
+    // 📖 Favorite toggle — right-click on model rows
+    toggleFavoriteModel,
+    syncFavoriteFlags,
+    toFavoriteKey,
+    // 📖 Tool mode cycling — compat header click
+    cycleToolMode: () => {
+      // 📖 Inline cycle matching the Z-key handler in createKeyHandler
+      const modeOrder = getToolModeOrder()
+      const currentIndex = modeOrder.indexOf(state.mode)
+      const nextIndex = (currentIndex + 1) % modeOrder.length
+      state.mode = modeOrder[nextIndex]
+      if (!state.config.settings || typeof state.config.settings !== 'object') state.config.settings = {}
+      state.config.settings.preferredToolMode = state.mode
+      saveConfig(state.config)
+    },
+  })
+
+  // 📖 Wire the raw stdin data listener for mouse events.
+  // 📖 createMouseHandler returns a function that parses SGR sequences and calls onMouseEvent.
+  onMouseData = createMouseHandler({ onMouseEvent })
+
   // Apply CLI --tier filter if provided
   if (cliArgs.tierFilter) {
     const allowed = TIER_LETTER_MAP[cliArgs.tierFilter]
@@ -858,8 +893,35 @@ export async function runApp(cliArgs, config) {
     process.stdin.setRawMode(true)
   }
 
+  // 📖 Mouse sequence suppression: readline.emitKeypressEvents() registers its own
+  // 📖 internal `data` listener that parses bytes and fires `keypress` events.
+  // 📖 When a mouse SGR sequence like \x1b[<0;35;20m arrives, readline fragments it
+  // 📖 and emits individual keypress events for chars like 'm', '0', ';' etc.
+  // 📖 The 'm' at the end of a release event maps to the Model sort hotkey!
+  // 📖
+  // 📖 Fix: use prependListener to register a `data` handler BEFORE readline's,
+  // 📖 so we can set a suppression flag before any keypress events fire.
+  // 📖 The flag is cleared on the next tick via setImmediate after all synchronous
+  // 📖 keypress emissions from readline have completed.
+  let _suppressMouseKeypresses = false
+
+  process.stdin.prependListener('data', (data) => {
+    const str = typeof data === 'string' ? data : data.toString('utf8')
+    if (str.includes('\x1b[<')) {
+      _suppressMouseKeypresses = true
+      // 📖 Reset after current tick — all synchronous keypress events from this data
+      // 📖 chunk will have fired by then.
+      setImmediate(() => { _suppressMouseKeypresses = false })
+    }
+  })
+
   process.stdin.on('keypress', async (str, key) => {
     try {
+      // 📖 Skip keypress events that originate from mouse escape sequences.
+      // 📖 readline may partially parse SGR mouse sequences as garbage keypresses.
+      if (str && containsMouseSequence(str)) return
+      // 📖 Suppress fragmented mouse bytes that readline emits as individual keypresses.
+      if (_suppressMouseKeypresses) return
       await onKeyPress(str, key);
     } catch (err) {
       process.stdout.write(ALT_LEAVE);
@@ -869,6 +931,18 @@ export async function runApp(cliArgs, config) {
       process.exit(1);
     }
   })
+
+  // 📖 Mouse data listener: parses SGR mouse escape sequences from raw stdin
+  // 📖 and dispatches structured events (click, scroll, double-click) to the mouse handler.
+  process.stdin.on('data', (data) => {
+    try {
+      if (onMouseData) onMouseData(data)
+    } catch (err) {
+      // 📖 Mouse errors are non-fatal — log and continue so the TUI doesn't crash.
+      // 📖 This could happen on terminals that send unexpected mouse sequences.
+    }
+  })
+
   process.on('SIGCONT', noteUserActivity)
 
   // 📖 Animation loop: render settings overlay, recommend overlay, help overlay, feature request overlay, bug report overlay, changelog overlay, OR main table

@@ -56,6 +56,8 @@ import {
 import { getToolInstallPlan, isToolInstalled, resolveToolBinaryPath } from '../src/tool-bootstrap.js'
 import { TOOL_METADATA, TOOL_MODE_ORDER, getCompatibleTools, isModelCompatibleWithTool, findSimilarCompatibleModels } from '../src/tool-metadata.js'
 import { sortResultsWithPinnedFavorites } from '../src/render-helpers.js'
+import { parseMouseEvents, containsMouseSequence, createMouseHandler, MOUSE_ENABLE, MOUSE_DISABLE } from '../src/mouse.js'
+import { COLUMN_SORT_MAP } from '../src/render-table.js'
 import { startOpenClaw } from '../src/openclaw.js'
 import { getConfiguredInstallableProviders, getInstallTargetModes, installProviderEndpoints } from '../src/endpoint-installer.js'
 import { cleanupLegacyProxyArtifacts } from '../src/legacy-proxy-cleanup.js'
@@ -2837,5 +2839,350 @@ describe('sortResultsWithPinnedFavorites normal sort order', () => {
     const sorted = sortResultsWithPinnedFavorites(models, 'rank', 'asc', { pinFavorites: true })
     assert.equal(sorted[0].id, 'rovo-fav')
     assert.equal(sorted[1].id, 'regular-1')
+  })
+})
+
+// ─── Mouse support tests ────────────────────────────────────────────────
+
+describe('parseMouseEvents', () => {
+  it('parses a left-click press event', () => {
+    // 📖 SGR: \x1b[<0;10;5M → left press at col 10, row 5
+    const events = parseMouseEvents('\x1b[<0;10;5M')
+    assert.equal(events.length, 1)
+    assert.equal(events[0].type, 'press')
+    assert.equal(events[0].button, 'left')
+    assert.equal(events[0].x, 10)
+    assert.equal(events[0].y, 5)
+    assert.equal(events[0].shift, false)
+    assert.equal(events[0].meta, false)
+    assert.equal(events[0].ctrl, false)
+  })
+
+  it('parses a left-click release event', () => {
+    // 📖 SGR: \x1b[<0;10;5m → left release at col 10, row 5
+    const events = parseMouseEvents('\x1b[<0;10;5m')
+    assert.equal(events.length, 1)
+    assert.equal(events[0].type, 'release')
+    assert.equal(events[0].button, 'left')
+    assert.equal(events[0].x, 10)
+    assert.equal(events[0].y, 5)
+  })
+
+  it('parses a right-click press event', () => {
+    // 📖 SGR: \x1b[<2;20;15M → right press
+    const events = parseMouseEvents('\x1b[<2;20;15M')
+    assert.equal(events.length, 1)
+    assert.equal(events[0].type, 'press')
+    assert.equal(events[0].button, 'right')
+    assert.equal(events[0].x, 20)
+    assert.equal(events[0].y, 15)
+  })
+
+  it('parses a middle-click event', () => {
+    const events = parseMouseEvents('\x1b[<1;5;3M')
+    assert.equal(events.length, 1)
+    assert.equal(events[0].button, 'middle')
+    assert.equal(events[0].type, 'press')
+  })
+
+  it('parses scroll-up event', () => {
+    // 📖 SGR: \x1b[<64;10;5M → scroll up
+    const events = parseMouseEvents('\x1b[<64;10;5M')
+    assert.equal(events.length, 1)
+    assert.equal(events[0].type, 'scroll-up')
+    assert.equal(events[0].button, 'scroll-up')
+    assert.equal(events[0].x, 10)
+    assert.equal(events[0].y, 5)
+  })
+
+  it('parses scroll-down event', () => {
+    const events = parseMouseEvents('\x1b[<65;10;5M')
+    assert.equal(events.length, 1)
+    assert.equal(events[0].type, 'scroll-down')
+    assert.equal(events[0].button, 'scroll-down')
+  })
+
+  it('parses drag event', () => {
+    // 📖 SGR: \x1b[<32;10;5M → left drag
+    const events = parseMouseEvents('\x1b[<32;10;5M')
+    assert.equal(events.length, 1)
+    assert.equal(events[0].type, 'drag')
+    assert.equal(events[0].button, 'left')
+  })
+
+  it('detects shift modifier', () => {
+    // 📖 Shift adds +4 to button field: 0+4 = 4
+    const events = parseMouseEvents('\x1b[<4;10;5M')
+    assert.equal(events.length, 1)
+    assert.equal(events[0].shift, true)
+    assert.equal(events[0].meta, false)
+    assert.equal(events[0].ctrl, false)
+    assert.equal(events[0].button, 'left')
+  })
+
+  it('detects meta/alt modifier', () => {
+    // 📖 Meta adds +8: 0+8 = 8
+    const events = parseMouseEvents('\x1b[<8;10;5M')
+    assert.equal(events.length, 1)
+    assert.equal(events[0].meta, true)
+    assert.equal(events[0].shift, false)
+  })
+
+  it('detects ctrl modifier', () => {
+    // 📖 Ctrl adds +16: 0+16 = 16
+    const events = parseMouseEvents('\x1b[<16;10;5M')
+    assert.equal(events.length, 1)
+    assert.equal(events[0].ctrl, true)
+  })
+
+  it('detects combined modifiers (shift + ctrl)', () => {
+    // 📖 Shift(4) + Ctrl(16) = 20 on left button
+    const events = parseMouseEvents('\x1b[<20;10;5M')
+    assert.equal(events.length, 1)
+    assert.equal(events[0].shift, true)
+    assert.equal(events[0].ctrl, true)
+    assert.equal(events[0].meta, false)
+    assert.equal(events[0].button, 'left')
+  })
+
+  it('parses multiple events from a single data chunk', () => {
+    // 📖 Rapid scrolling can send multiple events in one chunk
+    const data = '\x1b[<64;10;5M\x1b[<64;10;5M\x1b[<65;10;5M'
+    const events = parseMouseEvents(data)
+    assert.equal(events.length, 3)
+    assert.equal(events[0].type, 'scroll-up')
+    assert.equal(events[1].type, 'scroll-up')
+    assert.equal(events[2].type, 'scroll-down')
+  })
+
+  it('returns empty array for non-mouse data', () => {
+    const events = parseMouseEvents('hello world')
+    assert.deepEqual(events, [])
+  })
+
+  it('handles Buffer input', () => {
+    const buf = Buffer.from('\x1b[<0;10;5M', 'utf8')
+    const events = parseMouseEvents(buf)
+    assert.equal(events.length, 1)
+    assert.equal(events[0].button, 'left')
+  })
+
+  it('parses large coordinates (> 223 columns)', () => {
+    // 📖 SGR mode supports coordinates > 223 (unlike X10 mode)
+    const events = parseMouseEvents('\x1b[<0;300;150M')
+    assert.equal(events.length, 1)
+    assert.equal(events[0].x, 300)
+    assert.equal(events[0].y, 150)
+  })
+})
+
+describe('containsMouseSequence', () => {
+  it('returns true for SGR mouse data', () => {
+    assert.equal(containsMouseSequence('\x1b[<0;10;5M'), true)
+  })
+
+  it('returns true for partial mouse prefix in mixed data', () => {
+    assert.equal(containsMouseSequence('abc\x1b[<0;10;5Mdef'), true)
+  })
+
+  it('returns false for regular keypress data', () => {
+    assert.equal(containsMouseSequence('\x1b[A'), false) // up arrow
+    assert.equal(containsMouseSequence('T'), false)
+    assert.equal(containsMouseSequence('\r'), false)
+  })
+
+  it('returns false for empty string', () => {
+    assert.equal(containsMouseSequence(''), false)
+  })
+
+  it('handles Buffer input', () => {
+    const buf = Buffer.from('\x1b[<0;1;1M', 'utf8')
+    assert.equal(containsMouseSequence(buf), true)
+  })
+})
+
+describe('createMouseHandler', () => {
+  it('emits click on left-button release', () => {
+    const received = []
+    const handler = createMouseHandler({ onMouseEvent: (e) => received.push(e) })
+
+    // 📖 Send press then release — click is emitted only on release
+    handler('\x1b[<0;10;5M')  // press
+    handler('\x1b[<0;10;5m')  // release
+    assert.equal(received.length, 1)
+    assert.equal(received[0].type, 'click')
+    assert.equal(received[0].button, 'left')
+    assert.equal(received[0].x, 10)
+    assert.equal(received[0].y, 5)
+  })
+
+  it('does not emit click on press alone (only on release)', () => {
+    const received = []
+    const handler = createMouseHandler({ onMouseEvent: (e) => received.push(e) })
+    handler('\x1b[<0;10;5M')  // press only
+    assert.equal(received.length, 0)
+  })
+
+  it('emits scroll events immediately (no press/release)', () => {
+    const received = []
+    const handler = createMouseHandler({ onMouseEvent: (e) => received.push(e) })
+    handler('\x1b[<64;10;5M')  // scroll up
+    assert.equal(received.length, 1)
+    assert.equal(received[0].type, 'scroll-up')
+  })
+
+  it('emits drag events', () => {
+    const received = []
+    const handler = createMouseHandler({ onMouseEvent: (e) => received.push(e) })
+    handler('\x1b[<32;10;5M')  // left drag
+    assert.equal(received.length, 1)
+    assert.equal(received[0].type, 'drag')
+    assert.equal(received[0].button, 'left')
+  })
+
+  it('emits right-click on right-button release', () => {
+    const received = []
+    const handler = createMouseHandler({ onMouseEvent: (e) => received.push(e) })
+    handler('\x1b[<2;15;8M')  // right press
+    handler('\x1b[<2;15;8m')  // right release
+    // 📖 Right press is ignored; only release emits click
+    assert.equal(received.length, 1)
+    assert.equal(received[0].type, 'click')
+    assert.equal(received[0].button, 'right')
+  })
+
+  it('detects double-click on same position within timeout', () => {
+    const received = []
+    const handler = createMouseHandler({ onMouseEvent: (e) => received.push(e) })
+
+    // 📖 Two rapid left releases at the same position → click + double-click
+    handler('\x1b[<0;10;5m')  // first release
+    handler('\x1b[<0;10;5m')  // second release (within 400ms)
+
+    assert.equal(received.length, 2)
+    assert.equal(received[0].type, 'click')
+    assert.equal(received[1].type, 'double-click')
+  })
+
+  it('does not double-click on different positions', () => {
+    const received = []
+    const handler = createMouseHandler({ onMouseEvent: (e) => received.push(e) })
+
+    handler('\x1b[<0;10;5m')  // first release at (10,5)
+    handler('\x1b[<0;20;5m')  // second release at (20,5) — different x
+
+    assert.equal(received.length, 2)
+    assert.equal(received[0].type, 'click')
+    assert.equal(received[1].type, 'click') // 📖 Not double-click — different position
+  })
+
+  it('ignores non-mouse data', () => {
+    const received = []
+    const handler = createMouseHandler({ onMouseEvent: (e) => received.push(e) })
+    handler('T')       // regular keypress
+    handler('\x1b[A')  // up arrow
+    assert.equal(received.length, 0)
+  })
+
+  it('third rapid click does not trigger another double-click', () => {
+    const received = []
+    const handler = createMouseHandler({ onMouseEvent: (e) => received.push(e) })
+
+    handler('\x1b[<0;10;5m')  // 1st release → click
+    handler('\x1b[<0;10;5m')  // 2nd release → double-click (resets)
+    handler('\x1b[<0;10;5m')  // 3rd release → click (not double-click)
+
+    assert.equal(received.length, 3)
+    assert.equal(received[0].type, 'click')
+    assert.equal(received[1].type, 'double-click')
+    assert.equal(received[2].type, 'click') // 📖 Reset after double-click
+  })
+})
+
+describe('MOUSE_ENABLE / MOUSE_DISABLE sequences', () => {
+  it('MOUSE_ENABLE contains all required mode activations', () => {
+    // 📖 Mode 1000 (basic), 1002 (button-event), 1006 (SGR)
+    assert.ok(MOUSE_ENABLE.includes('\x1b[?1000h'), 'missing mode 1000 enable')
+    assert.ok(MOUSE_ENABLE.includes('\x1b[?1002h'), 'missing mode 1002 enable')
+    assert.ok(MOUSE_ENABLE.includes('\x1b[?1006h'), 'missing mode 1006 enable')
+  })
+
+  it('MOUSE_DISABLE contains all required mode deactivations', () => {
+    assert.ok(MOUSE_DISABLE.includes('\x1b[?1000l'), 'missing mode 1000 disable')
+    assert.ok(MOUSE_DISABLE.includes('\x1b[?1002l'), 'missing mode 1002 disable')
+    assert.ok(MOUSE_DISABLE.includes('\x1b[?1006l'), 'missing mode 1006 disable')
+  })
+
+  it('MOUSE_DISABLE reverses MOUSE_ENABLE modes in opposite order', () => {
+    // 📖 Best practice: disable in reverse order of enable
+    const enableOrder = ['1000', '1002', '1006']
+    const disableOrder = ['1006', '1002', '1000']
+    enableOrder.forEach((mode, i) => {
+      assert.ok(MOUSE_ENABLE.indexOf(`?${mode}h`) >= 0)
+    })
+    disableOrder.forEach((mode, i) => {
+      assert.ok(MOUSE_DISABLE.indexOf(`?${mode}l`) >= 0)
+    })
+  })
+})
+
+describe('COLUMN_SORT_MAP', () => {
+  it('maps rank column to rank sort key', () => {
+    assert.equal(COLUMN_SORT_MAP.rank, 'rank')
+  })
+
+  it('maps tier column to null (triggers filter cycle, not sort)', () => {
+    assert.equal(COLUMN_SORT_MAP.tier, null)
+  })
+
+  it('maps compat column to null (triggers Z tool cycle, not sort)', () => {
+    assert.equal(COLUMN_SORT_MAP.compat, null)
+  })
+
+  it('maps swe column to swe sort key', () => {
+    assert.equal(COLUMN_SORT_MAP.swe, 'swe')
+  })
+
+  it('maps ctx column to ctx sort key', () => {
+    assert.equal(COLUMN_SORT_MAP.ctx, 'ctx')
+  })
+
+  it('maps model column to model sort key', () => {
+    assert.equal(COLUMN_SORT_MAP.model, 'model')
+  })
+
+  it('maps source column to origin sort key', () => {
+    assert.equal(COLUMN_SORT_MAP.source, 'origin')
+  })
+
+  it('maps ping column to ping sort key', () => {
+    assert.equal(COLUMN_SORT_MAP.ping, 'ping')
+  })
+
+  it('maps avg column to avg sort key', () => {
+    assert.equal(COLUMN_SORT_MAP.avg, 'avg')
+  })
+
+  it('maps health column to condition sort key', () => {
+    assert.equal(COLUMN_SORT_MAP.health, 'condition')
+  })
+
+  it('maps verdict column to verdict sort key', () => {
+    assert.equal(COLUMN_SORT_MAP.verdict, 'verdict')
+  })
+
+  it('maps stability column to stability sort key', () => {
+    assert.equal(COLUMN_SORT_MAP.stability, 'stability')
+  })
+
+  it('maps uptime column to uptime sort key', () => {
+    assert.equal(COLUMN_SORT_MAP.uptime, 'uptime')
+  })
+
+  it('has entries for all expected columns', () => {
+    const expected = ['rank', 'tier', 'swe', 'ctx', 'model', 'source', 'ping', 'avg', 'health', 'verdict', 'stability', 'uptime', 'compat']
+    for (const col of expected) {
+      assert.ok(col in COLUMN_SORT_MAP, `missing column: ${col}`)
+    }
   })
 })

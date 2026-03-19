@@ -31,6 +31,7 @@ import { loadChangelog } from './changelog-loader.js'
 import { getToolMeta, isModelCompatibleWithTool, getCompatibleTools, findSimilarCompatibleModels } from './tool-metadata.js'
 import { loadConfig, replaceConfigContents } from './config.js'
 import { cleanupLegacyProxyArtifacts } from './legacy-proxy-cleanup.js'
+import { getLastLayout, COLUMN_SORT_MAP } from './render-table.js'
 import { cycleThemeSetting, detectActiveTheme } from './theme.js'
 import { buildCommandPaletteTree, flattenCommandTree, filterCommandPaletteEntries } from './command-palette.js'
 import { WIDTH_WARNING_MIN_COLS } from './constants.js'
@@ -2155,5 +2156,417 @@ export function createKeyHandler(ctx) {
 
       await launchSelectedModel(selected)
     }
+  }
+}
+
+/**
+ * 📖 createMouseEventHandler: Factory that returns a handler for structured mouse events.
+ * 📖 Works alongside the keypress handler — shares the same state and action functions.
+ *
+ * 📖 Supported interactions:
+ *   - Click on header row column → sort by that column (or cycle tier filter for Tier column)
+ *   - Click on model row → move cursor to that row
+ *   - Double-click on model row → select the model (Enter)
+ *   - Scroll up/down → navigate cursor up/down (with wrap-around)
+ *   - Scroll in overlays → scroll overlay content
+ *
+ * @param {object} ctx — same context object passed to createKeyHandler
+ * @returns {function} — callback for onMouseEvent in createMouseHandler()
+ */
+export function createMouseEventHandler(ctx) {
+  const {
+    state,
+    adjustScrollOffset,
+    applyTierFilter,
+    TIER_CYCLE,
+    noteUserActivity,
+    sortResultsWithPinnedFavorites,
+    saveConfig,
+    overlayLayout,
+    // 📖 Favorite toggle deps — used by right-click on model rows
+    toggleFavoriteModel,
+    syncFavoriteFlags,
+    toFavoriteKey,
+    // 📖 Tool mode cycling — used by compat column header click
+    cycleToolMode,
+  } = ctx
+
+  // 📖 Shared helper: set the sort column, toggling direction if same column clicked twice.
+  function setSortColumnFromClick(col) {
+    if (state.sortColumn === col) {
+      state.sortDirection = state.sortDirection === 'asc' ? 'desc' : 'asc'
+    } else {
+      state.sortColumn = col
+      state.sortDirection = 'asc'
+    }
+    // 📖 Recompute visible sorted list to reflect new sort order
+    const visible = state.results.filter(r => !r.hidden)
+    state.visibleSorted = sortResultsWithPinnedFavorites(visible, state.sortColumn, state.sortDirection, {
+      pinFavorites: state.favoritesPinnedAndSticky,
+    })
+  }
+
+  // 📖 Shared helper: persist UI settings after mouse-triggered changes
+  function persistUiSettings() {
+    if (!state.config) return
+    if (!state.config.settings || typeof state.config.settings !== 'object') state.config.settings = {}
+    state.config.settings.sortColumn = state.sortColumn
+    state.config.settings.sortDirection = state.sortDirection
+    state.config.settings.tierFilter = TIER_CYCLE[state.tierFilterMode] || null
+  }
+
+  // 📖 Shared helper: toggle favorite on a specific model row index.
+  // 📖 Mirrors the keyboard F-key handler but operates at a given index.
+  function toggleFavoriteAtRow(modelIdx) {
+    const selected = state.visibleSorted[modelIdx]
+    if (!selected) return
+    const wasFavorite = selected.isFavorite
+    toggleFavoriteModel(state.config, selected.providerKey, selected.modelId)
+    syncFavoriteFlags(state.results, state.config)
+    applyTierFilter()
+    const visible = state.results.filter(r => !r.hidden)
+    state.visibleSorted = sortResultsWithPinnedFavorites(visible, state.sortColumn, state.sortDirection, {
+      pinFavorites: state.favoritesPinnedAndSticky,
+    })
+    // 📖 If we unfavorited while pinned mode is on, reset cursor to top
+    if (wasFavorite && state.favoritesPinnedAndSticky) {
+      state.cursor = 0
+      state.scrollOffset = 0
+      return
+    }
+    // 📖 Otherwise, track the model's new position after re-sort
+    const selectedKey = toFavoriteKey(selected.providerKey, selected.modelId)
+    const newCursor = state.visibleSorted.findIndex(r => toFavoriteKey(r.providerKey, r.modelId) === selectedKey)
+    if (newCursor >= 0) state.cursor = newCursor
+    adjustScrollOffset(state)
+  }
+
+  // 📖 Shared helper: map a terminal row (1-based) to a cursor index using
+  // 📖 an overlay's cursorLineByRow map and scroll offset.
+  // 📖 Returns the cursor index, or -1 if no match.
+  function overlayRowToCursor(y, cursorToLineMap, scrollOffset) {
+    // 📖 Terminal row Y (1-based) → line index in the overlay lines array.
+    // 📖 sliceOverlayLines shows lines from [scrollOffset .. scrollOffset + terminalRows).
+    // 📖 Terminal row 1 = line[scrollOffset], row 2 = line[scrollOffset+1], etc.
+    const lineIdx = (y - 1) + scrollOffset
+    for (const [cursorStr, lineNum] of Object.entries(cursorToLineMap)) {
+      if (lineNum === lineIdx) return parseInt(cursorStr, 10)
+    }
+    return -1
+  }
+
+  return (evt) => {
+    noteUserActivity()
+    const layout = getLastLayout()
+
+    // ── Scroll events ──────────────────────────────────────────────────
+    if (evt.type === 'scroll-up' || evt.type === 'scroll-down') {
+      // 📖 Overlay scroll: if any overlay is open, scroll its content
+      if (state.helpVisible) {
+        const step = evt.type === 'scroll-up' ? -3 : 3
+        state.helpScrollOffset = Math.max(0, (state.helpScrollOffset || 0) + step)
+        return
+      }
+      if (state.changelogOpen) {
+        const step = evt.type === 'scroll-up' ? -3 : 3
+        state.changelogScrollOffset = Math.max(0, (state.changelogScrollOffset || 0) + step)
+        return
+      }
+      if (state.settingsOpen) {
+        // 📖 Settings overlay uses cursor navigation, not scroll offset.
+        // 📖 Move settingsCursor up/down instead of scrolling.
+        if (evt.type === 'scroll-up') {
+          state.settingsCursor = Math.max(0, (state.settingsCursor || 0) - 1)
+        } else {
+          const max = overlayLayout?.settingsMaxRow ?? 99
+          state.settingsCursor = Math.min(max, (state.settingsCursor || 0) + 1)
+        }
+        return
+      }
+      if (state.recommendOpen) {
+        // 📖 Recommend questionnaire phase: scroll moves cursor through options
+        if (state.recommendPhase === 'questionnaire') {
+          const step = evt.type === 'scroll-up' ? -1 : 1
+          state.recommendCursor = Math.max(0, (state.recommendCursor || 0) + step)
+        } else {
+          const step = evt.type === 'scroll-up' ? -1 : 1
+          state.recommendScrollOffset = Math.max(0, (state.recommendScrollOffset || 0) + step)
+        }
+        return
+      }
+      if (state.feedbackOpen) {
+        // 📖 Feedback overlay doesn't scroll — ignore
+        return
+      }
+      if (state.commandPaletteOpen) {
+        // 📖 Command palette: scroll the results list
+        const count = state.commandPaletteResults?.length || 0
+        if (count === 0) return
+        if (evt.type === 'scroll-up') {
+          state.commandPaletteCursor = state.commandPaletteCursor > 0 ? state.commandPaletteCursor - 1 : count - 1
+        } else {
+          state.commandPaletteCursor = state.commandPaletteCursor < count - 1 ? state.commandPaletteCursor + 1 : 0
+        }
+        return
+      }
+      if (state.installEndpointsOpen) {
+        // 📖 Install endpoints: move cursor up/down
+        if (evt.type === 'scroll-up') {
+          state.installEndpointsCursor = Math.max(0, (state.installEndpointsCursor || 0) - 1)
+        } else {
+          state.installEndpointsCursor = (state.installEndpointsCursor || 0) + 1
+        }
+        return
+      }
+      if (state.toolInstallPromptOpen) {
+        // 📖 Tool install prompt: move cursor up/down
+        if (evt.type === 'scroll-up') {
+          state.toolInstallPromptCursor = Math.max(0, (state.toolInstallPromptCursor || 0) - 1)
+        } else {
+          state.toolInstallPromptCursor = (state.toolInstallPromptCursor || 0) + 1
+        }
+        return
+      }
+
+      // 📖 Main table scroll: move cursor up/down with wrap-around
+      const count = state.visibleSorted.length
+      if (count === 0) return
+      if (evt.type === 'scroll-up') {
+        state.cursor = state.cursor > 0 ? state.cursor - 1 : count - 1
+      } else {
+        state.cursor = state.cursor < count - 1 ? state.cursor + 1 : 0
+      }
+      adjustScrollOffset(state)
+      return
+    }
+
+    // ── Click / double-click events ────────────────────────────────────
+    if (evt.type !== 'click' && evt.type !== 'double-click') return
+
+    const { x, y } = evt
+
+    // ── Overlay click handling ─────────────────────────────────────────
+    // 📖 When an overlay is open, handle clicks inside it or close it.
+    // 📖 Priority order matches the rendering priority in app.js.
+
+    if (state.commandPaletteOpen) {
+      // 📖 Command palette is a floating modal — detect clicks inside vs outside.
+      const cp = overlayLayout
+      const insideModal = cp &&
+        x >= (cp.commandPaletteLeft || 0) && x <= (cp.commandPaletteRight || 0) &&
+        y >= (cp.commandPaletteTop || 0) && y <= (cp.commandPaletteBottom || 0)
+
+      if (insideModal) {
+        // 📖 Check if click is in the body area (result rows)
+        const bodyStart = cp.commandPaletteBodyStartRow || 0
+        const bodyEnd = bodyStart + (cp.commandPaletteBodyRows || 0) - 1
+        if (y >= bodyStart && y <= bodyEnd) {
+          // 📖 Map terminal row → cursor index via the cursorToLine map + scroll offset
+          const cursorIdx = overlayRowToCursor(
+            y - bodyStart + 1, // 📖 Normalize: row within body → 1-based for overlayRowToCursor
+            cp.commandPaletteCursorToLine,
+            cp.commandPaletteScrollOffset
+          )
+          if (cursorIdx >= 0) {
+            state.commandPaletteCursor = cursorIdx
+            if (evt.type === 'double-click') {
+              // 📖 Double-click executes the selected command (same as Enter)
+              process.stdin.emit('keypress', '\r', { name: 'return', ctrl: false, meta: false, shift: false })
+            }
+            return
+          }
+        }
+        // 📖 Click inside modal but not on a result row — ignore (don't close)
+        return
+      }
+
+      // 📖 Click outside the modal → close (Escape equivalent)
+      state.commandPaletteOpen = false
+      state.commandPaletteFrozenTable = null
+      state.commandPaletteQuery = ''
+      state.commandPaletteCursor = 0
+      state.commandPaletteScrollOffset = 0
+      state.commandPaletteResults = []
+      return
+    }
+
+    if (state.installEndpointsOpen) {
+      // 📖 Install endpoints overlay: click closes (Escape equivalent)
+      state.installEndpointsOpen = false
+      return
+    }
+
+    if (state.toolInstallPromptOpen) {
+      // 📖 Tool install prompt: click closes (Escape equivalent)
+      state.toolInstallPromptOpen = false
+      return
+    }
+
+    if (state.incompatibleFallbackOpen) {
+      // 📖 Incompatible fallback: click closes
+      state.incompatibleFallbackOpen = false
+      return
+    }
+
+    if (state.feedbackOpen) {
+      // 📖 Feedback overlay: click anywhere closes (no scroll, no cursor)
+      state.feedbackOpen = false
+      state.feedbackInput = ''
+      return
+    }
+
+    if (state.helpVisible) {
+      // 📖 Help overlay: click anywhere closes (same as K or Escape)
+      state.helpVisible = false
+      return
+    }
+
+    if (state.changelogOpen) {
+      // 📖 Changelog overlay: click on a version row selects it, otherwise close.
+      if (overlayLayout && state.changelogPhase === 'index') {
+        const cursorIdx = overlayRowToCursor(
+          y,
+          overlayLayout.changelogCursorToLine,
+          overlayLayout.changelogScrollOffset
+        )
+        if (cursorIdx >= 0) {
+          state.changelogCursor = cursorIdx
+          // 📖 Double-click opens the selected version's details (same as Enter)
+          if (evt.type === 'double-click') {
+            process.stdin.emit('keypress', '\r', { name: 'return', ctrl: false, meta: false, shift: false })
+          }
+          return
+        }
+      }
+      // 📖 Click outside version list → close (Escape equivalent)
+      // 📖 In details phase, click anywhere goes back (same as B key)
+      if (state.changelogPhase === 'details') {
+        state.changelogPhase = 'index'
+        state.changelogScrollOffset = 0
+      } else {
+        state.changelogOpen = false
+      }
+      return
+    }
+
+    if (state.recommendOpen) {
+      if (state.recommendPhase === 'questionnaire' && overlayLayout?.recommendOptionRows) {
+        // 📖 Map click Y to the specific questionnaire option row
+        const optRows = overlayLayout.recommendOptionRows
+        for (const [idxStr, row] of Object.entries(optRows)) {
+          if (y === row) {
+            state.recommendCursor = parseInt(idxStr, 10)
+            if (evt.type === 'double-click') {
+              // 📖 Double-click confirms the option (same as Enter)
+              process.stdin.emit('keypress', '\r', { name: 'return', ctrl: false, meta: false, shift: false })
+            }
+            return
+          }
+        }
+        // 📖 Click outside option rows in questionnaire — ignore (don't close)
+        return
+      }
+      // 📖 Result phase: click closes. Analyzing phase: click does nothing.
+      if (state.recommendPhase === 'results') {
+        state.recommendOpen = false
+        state.recommendPhase = null
+        state.recommendResults = []
+        state.recommendScrollOffset = 0
+      }
+      return
+    }
+
+    if (state.settingsOpen) {
+      // 📖 Settings overlay: click on a provider/maintenance row moves cursor there.
+      // 📖 Don't handle clicks during edit/add-key mode (keyboard is primary).
+      if (state.settingsEditMode || state.settingsAddKeyMode) return
+
+      if (overlayLayout) {
+        const cursorIdx = overlayRowToCursor(
+          y,
+          overlayLayout.settingsCursorToLine,
+          overlayLayout.settingsScrollOffset
+        )
+        if (cursorIdx >= 0 && cursorIdx <= (overlayLayout.settingsMaxRow || 99)) {
+          state.settingsCursor = cursorIdx
+          // 📖 Double-click triggers the Enter action (edit key / toggle / run action)
+          if (evt.type === 'double-click') {
+            process.stdin.emit('keypress', '\r', { name: 'return', ctrl: false, meta: false, shift: false })
+          }
+          return
+        }
+      }
+      // 📖 Click outside any recognized row does nothing in Settings
+      // 📖 (user can Escape or press P to close)
+      return
+    }
+
+    // ── Main table click handling ──────────────────────────────────────
+    // 📖 No overlay is open — clicks go to the main table.
+
+    // 📖 Check if click is on the column header row → trigger sort
+    if (y === layout.headerRow) {
+      const col = layout.columns.find(c => x >= c.xStart && x <= c.xEnd)
+      if (col) {
+        const sortKey = COLUMN_SORT_MAP[col.name]
+        if (sortKey) {
+          setSortColumnFromClick(sortKey)
+          persistUiSettings()
+        } else if (col.name === 'tier') {
+          // 📖 Clicking the Tier header cycles the tier filter (same as T key)
+          state.tierFilterMode = (state.tierFilterMode + 1) % TIER_CYCLE.length
+          applyTierFilter()
+          const visible = state.results.filter(r => !r.hidden)
+          state.visibleSorted = sortResultsWithPinnedFavorites(visible, state.sortColumn, state.sortDirection, {
+            pinFavorites: state.favoritesPinnedAndSticky,
+          })
+          state.cursor = 0
+          state.scrollOffset = 0
+          persistUiSettings()
+        } else if (col.name === 'compat') {
+          // 📖 Clicking the Compat header cycles tool mode (same as Z key)
+          cycleToolMode()
+        }
+      }
+      return
+    }
+
+    // 📖 Check if click is on a model row → move cursor (or select on double-click)
+    // 📖 Right-click toggles favorite on that row (same as F key)
+    if (y >= layout.firstModelRow && y <= layout.lastModelRow) {
+      const rowOffset = y - layout.firstModelRow
+      const modelIdx = layout.viewportStartIdx + rowOffset
+      if (modelIdx >= layout.viewportStartIdx && modelIdx < layout.viewportEndIdx) {
+        state.cursor = modelIdx
+        adjustScrollOffset(state)
+
+        if (evt.button === 'right') {
+          // 📖 Right-click: toggle favorite on this model row
+          toggleFavoriteAtRow(modelIdx)
+        } else if (evt.type === 'double-click') {
+          // 📖 Double-click triggers the Enter action (select model).
+          process.stdin.emit('keypress', '\r', { name: 'return', ctrl: false, meta: false, shift: false })
+        }
+      }
+      return
+    }
+
+    // ── Footer hotkey click zones ──────────────────────────────────────
+    // 📖 Check if click lands on a footer hotkey zone and emit the corresponding keypress.
+    if (layout.footerHotkeys && layout.footerHotkeys.length > 0) {
+      const zone = layout.footerHotkeys.find(z => y === z.row && x >= z.xStart && x <= z.xEnd)
+      if (zone) {
+        // 📖 Map the footer zone key to a synthetic keypress.
+        // 📖 Most are single-character keys; special cases like ctrl+p need special handling.
+        if (zone.key === 'ctrl+p') {
+          process.stdin.emit('keypress', '\x10', { name: 'p', ctrl: true, meta: false, shift: false })
+        } else {
+          process.stdin.emit('keypress', zone.key, { name: zone.key, ctrl: false, meta: false, shift: false })
+        }
+        return
+      }
+    }
+
+    // 📖 Clicks outside any recognized zone are silently ignored.
   }
 }

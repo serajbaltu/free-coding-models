@@ -47,8 +47,11 @@ import chalk from 'chalk'
 // 📖 \x1b[H      = cursor to top
 // 📖 \x1b[?7l disables auto-wrap so wide rows clip at the right edge instead of
 // 📖 wrapping to the next line (which would double the row height and overflow).
-export const ALT_ENTER = '\x1b[?1049h\x1b[?25l\x1b[?7l'
-export const ALT_LEAVE = '\x1b[?7h\x1b[?1049l\x1b[?25h'
+// 📖 Mouse tracking sequences are appended/prepended so clicks and scroll work in the TUI.
+import { MOUSE_ENABLE, MOUSE_DISABLE } from './mouse.js'
+
+export const ALT_ENTER = '\x1b[?1049h\x1b[?25l\x1b[?7l' + MOUSE_ENABLE
+export const ALT_LEAVE = MOUSE_DISABLE + '\x1b[?7h\x1b[?1049l\x1b[?25h'
 export const ALT_HOME  = '\x1b[H'
 
 // 📖 Timing constants — control how fast the health-check loop runs.

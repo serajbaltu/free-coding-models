@@ -56,6 +56,42 @@ import { getColumnSpacing } from './ui-config.js'
 const require = createRequire(import.meta.url)
 const { version: LOCAL_VERSION } = require('../package.json')
 
+// 📖 Mouse support: column boundary map updated every frame by renderTable().
+// 📖 Each entry maps a column name to its display X-start and X-end (1-based, inclusive).
+// 📖 headerRow is the 1-based terminal row of the column header line.
+// 📖 firstModelRow/lastModelRow are the 1-based terminal rows of the first/last visible model row.
+// 📖 Exported so the mouse handler can translate click coordinates into column/row targets.
+let _lastLayout = {
+  columns: [],       // 📖 Array of { name, xStart, xEnd } in display order
+  headerRow: 0,      // 📖 1-based terminal row of the column headers
+  firstModelRow: 0,  // 📖 1-based terminal row of the first visible model
+  lastModelRow: 0,   // 📖 1-based terminal row of the last visible model
+  viewportStartIdx: 0, // 📖 index into sorted[] of the first visible model
+  viewportEndIdx: 0,   // 📖 index into sorted[] past the last visible model
+  hasAboveIndicator: false, // 📖 whether "... N more above ..." is shown
+  hasBelowIndicator: false, // 📖 whether "... N more below ..." is shown
+  footerHotkeys: [],  // 📖 Array of { key, row, xStart, xEnd } for footer click zones
+}
+export function getLastLayout() { return _lastLayout }
+
+// 📖 Column name → sort key mapping for mouse click-to-sort on header row
+const COLUMN_SORT_MAP = {
+  rank: 'rank',
+  tier: null, // 📖 Tier column click cycles tier filter rather than sorting
+  swe: 'swe',
+  ctx: 'ctx',
+  model: 'model',
+  source: 'origin',
+  ping: 'ping',
+  avg: 'avg',
+  health: 'condition',
+  verdict: 'verdict',
+  stability: 'stability',
+  uptime: 'uptime',
+  compat: null, // 📖 Compat column is not sortable
+}
+export { COLUMN_SORT_MAP }
+
 // 📖 Provider column palette: soft pastel rainbow so each provider stays easy
 // 📖 to spot without turning the table into a harsh neon wall.
 // 📖 Exported for use in overlays (settings screen) and logs.
@@ -212,6 +248,36 @@ export function renderTable(results, pendingPings, frame, cursor = null, sortCol
     if (calcWidth() > terminalCols) showTier = false
     if (calcWidth() > terminalCols) showStability = false
   }
+
+  // 📖 Mouse support: compute column boundaries from the resolved responsive widths.
+  // 📖 This builds an ordered array of { name, xStart, xEnd } (1-based display columns)
+  // 📖 matching exactly what renderTable paints so click-to-sort hits the right column.
+  {
+    const colDefs = []
+    if (showRank) colDefs.push({ name: 'rank', width: W_RANK })
+    if (showTier) colDefs.push({ name: 'tier', width: W_TIER })
+    colDefs.push({ name: 'swe', width: W_SWE })
+    colDefs.push({ name: 'ctx', width: W_CTX })
+    colDefs.push({ name: 'model', width: W_MODEL })
+    colDefs.push({ name: 'source', width: wSource })
+    colDefs.push({ name: 'ping', width: wPing })
+    colDefs.push({ name: 'avg', width: wAvg })
+    colDefs.push({ name: 'health', width: wStatus })
+    colDefs.push({ name: 'verdict', width: W_VERDICT })
+    if (showStability) colDefs.push({ name: 'stability', width: wStab })
+    if (showUptime) colDefs.push({ name: 'uptime', width: W_UPTIME })
+    if (showCompat) colDefs.push({ name: 'compat', width: W_COMPAT })
+
+    let x = ROW_MARGIN + 1 // 📖 1-based: first column starts after the 2-char left margin
+    const columns = []
+    for (let i = 0; i < colDefs.length; i++) {
+      const { name, width } = colDefs[i]
+      const xEnd = x + width - 1
+      columns.push({ name, xStart: x, xEnd })
+      x = xEnd + 1 + SEP_W // 📖 skip past the ' │ ' separator
+    }
+    _lastLayout.columns = columns
+  }
   const warningDurationMs = 2_000
   const elapsed = widthWarningStartedAt ? Math.max(0, Date.now() - widthWarningStartedAt) : warningDurationMs
   const remainingMs = Math.max(0, warningDurationMs - elapsed)
@@ -268,8 +334,8 @@ export function renderTable(results, pendingPings, frame, cursor = null, sortCol
   const tierH    = 'Tier'
   const originH  = 'Provider'
   const modelH   = 'Model'
-  const sweH     = sortColumn === 'swe' ? dir + ' SWE%' : 'SWE%'
-  const ctxH     = sortColumn === 'ctx' ? dir + ' CTX' : 'CTX'
+  const sweH     = sortColumn === 'swe' ? (dir + 'SWE%') : 'SWE%'
+  const ctxH     = sortColumn === 'ctx' ? (dir + 'CTX') : 'CTX'
   // 📖 Compact labels: 'Lat. P' / 'Avg. P' / 'StaB.' to save horizontal space
   const pingLabel = isCompact ? 'Lat. P' : 'Latest Ping'
   const avgLabel  = isCompact ? 'Avg. P' : 'Avg Ping'
@@ -278,8 +344,10 @@ export function renderTable(results, pendingPings, frame, cursor = null, sortCol
   const avgH     = sortColumn === 'avg' ? dir + ' ' + avgLabel : avgLabel
   const healthH  = sortColumn === 'condition' ? dir + ' Health' : 'Health'
   const verdictH = sortColumn === 'verdict' ? dir + ' Verdict' : 'Verdict'
-  const stabH    = sortColumn === 'stability' ? dir + ' ' + stabLabel : stabLabel
-  const uptimeH  = sortColumn === 'uptime' ? dir + ' Up%' : 'Up%'
+  // 📖 Stability: in non-compact the arrow eats 2 chars ('↑ '), so truncate to fit wStab.
+  // 📖 Compact is fine because '↑ StaB.' (7) < wStab (8).
+  const stabH    = sortColumn === 'stability' ? (dir + (isCompact ? ' ' + stabLabel : 'Stability')) : stabLabel
+  const uptimeH  = sortColumn === 'uptime' ? (dir + 'Up%') : 'Up%'
 
   // 📖 Helper to colorize first letter for keyboard shortcuts
   // 📖 IMPORTANT: Pad PLAIN TEXT first, then apply colors to avoid alignment issues
@@ -326,14 +394,13 @@ export function renderTable(results, pendingPings, frame, cursor = null, sortCol
     const padding = ' '.repeat(Math.max(0, W_UPTIME - plain.length))
     return themeColors.hotkey('U') + themeColors.dim('p%' + padding)
   })()
-  // 📖 "Compatible with" column header — show all tool emojis in their colors as the header
-  const compatHeaderEmojis = COMPAT_COLUMN_SLOTS.map(slot => {
-    return chalk.rgb(...slot.color)(slot.emoji)
-  }).join('')
-  // 📖 padEndDisplay accounts for emoji widths (most are 2-wide, π is 1-wide)
-  const compatHeaderRaw = COMPAT_COLUMN_SLOTS.reduce((w, slot) => w + displayWidth(slot.emoji), 0)
-  const compatHeaderPad = Math.max(0, W_COMPAT - compatHeaderRaw)
-  const compatH_c = compatHeaderEmojis + ' '.repeat(compatHeaderPad)
+  // 📖 "CLI Tools" column header — plain text label with Z hotkey highlighted
+  const compatH_c = (() => {
+    const label = 'CLI Tools'
+    const padding = ' '.repeat(Math.max(0, W_COMPAT - label.length))
+    // 📖 No single-letter hotkey in "CLI Tools" maps to Z, so just dim the full label.
+    return themeColors.dim(label + padding)
+  })()
   // 📖 Usage column removed from UI – no header or separator for it.
   // 📖 Header row: conditionally include columns based on responsive visibility
   const headerParts = []
@@ -344,6 +411,10 @@ export function renderTable(results, pendingPings, frame, cursor = null, sortCol
   if (showUptime) headerParts.push(uptimeH_c)
   if (showCompat) headerParts.push(compatH_c)
   lines.push('  ' + headerParts.join(COL_SEP))
+
+  // 📖 Mouse support: the column header row is the last line we just pushed.
+  // 📖 Terminal rows are 1-based, so line index (lines.length-1) → terminal row lines.length.
+  _lastLayout.headerRow = lines.length
 
 
 
@@ -375,6 +446,14 @@ export function renderTable(results, pendingPings, frame, cursor = null, sortCol
   if (vp.hasAbove) {
     lines.push(themeColors.dim(`  ... ${vp.startIdx} more above ...`))
   }
+
+  // 📖 Mouse support: record where model rows begin in the terminal (1-based).
+  // 📖 The next line pushed will be the first visible model row.
+  const _firstModelLineIdx = lines.length  // 📖 0-based index into lines[]
+  _lastLayout.viewportStartIdx = vp.startIdx
+  _lastLayout.viewportEndIdx = vp.endIdx
+  _lastLayout.hasAboveIndicator = vp.hasAbove
+  _lastLayout.hasBelowIndicator = vp.hasBelow
 
   for (let i = vp.startIdx; i < vp.endIdx; i++) {
     const r = sorted[i]
@@ -604,23 +683,22 @@ export function renderTable(results, pendingPings, frame, cursor = null, sortCol
     // 📖 "Compatible with" column — show colored emojis for compatible tools
     // 📖 Each slot in COMPAT_COLUMN_SLOTS maps to one or more tool keys.
     // 📖 OpenCode CLI + Desktop are merged into a single 📦 slot.
+    // 📖 Left-aligned: only compatible tool emojis are shown, packed to the left.
     let compatCell = ''
     if (showCompat) {
       const compatTools = getCompatibleTools(r.providerKey)
       let compatDisplayWidth = 0
-      const emojiCells = COMPAT_COLUMN_SLOTS.map(slot => {
+      const emojiParts = []
+      for (const slot of COMPAT_COLUMN_SLOTS) {
         const isCompat = slot.toolKeys.some(tk => compatTools.includes(tk))
-        const ew = displayWidth(slot.emoji)
-        compatDisplayWidth += isCompat ? ew : ew
         if (isCompat) {
-          return chalk.rgb(...slot.color)(slot.emoji)
+          emojiParts.push(chalk.rgb(...slot.color)(slot.emoji))
+          compatDisplayWidth += displayWidth(slot.emoji)
         }
-        // 📖 Replace incompatible emoji with dim spaces matching its display width
-        return themeColors.dim(' '.repeat(ew))
-      }).join('')
-      // 📖 Pad to W_COMPAT — account for actual emoji display widths
+      }
+      // 📖 Pad remaining width with spaces to fill W_COMPAT
       const extraPad = Math.max(0, W_COMPAT - compatDisplayWidth)
-      compatCell = emojiCells + ' '.repeat(extraPad)
+      compatCell = emojiParts.join('') + ' '.repeat(extraPad)
     }
 
     // 📖 Check if this model is incompatible with the active tool mode
@@ -656,6 +734,11 @@ export function renderTable(results, pendingPings, frame, cursor = null, sortCol
     }
   }
 
+  // 📖 Mouse support: record the 1-based terminal row range of model data rows.
+  // 📖 _firstModelLineIdx was captured before the loop; lines.length is now past the last model row.
+  _lastLayout.firstModelRow = _firstModelLineIdx + 1  // 📖 convert 0-based line index → 1-based terminal row
+  _lastLayout.lastModelRow = lines.length              // 📖 last pushed line is at lines.length (1-based)
+
   if (vp.hasBelow) {
     lines.push(themeColors.dim(`  ... ${sorted.length - vp.endIdx} more below ...`))
   }
@@ -670,7 +753,40 @@ export function renderTable(results, pendingPings, frame, cursor = null, sortCol
   const activeHotkey = (keyLabel, text, bg) => themeColors.badge(`${keyLabel}${text}`, bg, getReadableTextRgb(bg))
   const favoritesModeBg = favoritesPinnedAndSticky ? [157, 122, 48] : [95, 95, 95]
   const favoritesModeLabel = favoritesPinnedAndSticky ? ' Favorites Pinned' : ' Favorites Normal'
+
+  // 📖 Mouse support: build footer hotkey zones alongside the footer lines.
+  // 📖 Each zone records { key, row (1-based terminal row), xStart, xEnd (1-based display cols) }.
+  // 📖 We accumulate display position as we build each footer line's parts.
+  const footerHotkeys = []
+
   // 📖 Line 1: core navigation + filtering shortcuts
+  // 📖 Build as parts array so we can compute click zones and still join for display.
+  {
+    const parts = [
+      { text: '  ', key: null },
+      { text: 'F Toggle Favorite', key: 'f' },
+      { text: '  •  ', key: null },
+      { text: 'Y' + favoritesModeLabel, key: 'y' },
+      { text: '  •  ', key: null },
+      { text: tierFilterMode > 0 ? `T Tier (${activeTierLabel})` : 'T Tier', key: 't' },
+      { text: '  •  ', key: null },
+      { text: originFilterMode > 0 ? `D Provider (${activeOriginLabel})` : 'D Provider', key: 'd' },
+      { text: '  •  ', key: null },
+      { text: 'E Show only configured models', key: 'e' },
+      { text: '  •  ', key: null },
+      { text: 'P Settings', key: 'p' },
+      { text: '  •  ', key: null },
+      { text: 'K Help', key: 'k' },
+    ]
+    const footerRow1 = lines.length + 1 // 📖 1-based terminal row (line hasn't been pushed yet)
+    let xPos = 1
+    for (const part of parts) {
+      const w = displayWidth(part.text)
+      if (part.key) footerHotkeys.push({ key: part.key, row: footerRow1, xStart: xPos, xEnd: xPos + w - 1 })
+      xPos += w
+    }
+  }
+
   lines.push(
     '  ' + hotkey('F', ' Toggle Favorite') +
     themeColors.dim(`  •  `) +
@@ -684,12 +800,35 @@ export function renderTable(results, pendingPings, frame, cursor = null, sortCol
       ? activeHotkey('D', ` Provider (${activeOriginLabel})`, PROVIDER_COLOR[[null, ...Object.keys(sources)][originFilterMode]] || [255, 255, 255])
       : hotkey('D', ' Provider')) +
     themeColors.dim(`  •  `) +
-    (hideUnconfiguredModels ? activeHotkey('E', ' Configured Models Only', configuredBadgeBg) : hotkey('E', ' Configured Models Only')) +
+    (hideUnconfiguredModels ? activeHotkey('E', ' Show only configured models', configuredBadgeBg) : hotkey('E', ' Show only configured models')) +
     themeColors.dim(`  •  `) +
     hotkey('P', ' Settings') +
     themeColors.dim(`  •  `) +
     hotkey('K', ' Help')
   )
+
+  // 📖 Line 2: command palette, recommend, feedback, theme
+  {
+    const cpText = ' NEW ! CTRL+P ⚡️ Command Palette '
+    const parts = [
+      { text: '  ', key: null },
+      { text: cpText, key: 'ctrl+p' },
+      { text: '  •  ', key: null },
+      { text: 'Q Smart Recommend', key: 'q' },
+      { text: '  •  ', key: null },
+      { text: 'G Theme', key: 'g' },
+      { text: '  •  ', key: null },
+      { text: 'I Feedback, bugs & requests', key: 'i' },
+    ]
+    const footerRow2 = lines.length + 1
+    let xPos = 1
+    for (const part of parts) {
+      const w = displayWidth(part.text)
+      if (part.key) footerHotkeys.push({ key: part.key, row: footerRow2, xStart: xPos, xEnd: xPos + w - 1 })
+      xPos += w
+    }
+  }
+
   // 📖 Line 2: command palette (highlighted as new), recommend, feedback, and extended hints.
   // 📖 CTRL+P ⚡️ Command Palette uses neon-green-on-dark-green background to highlight the feature.
   const paletteLabel = chalk.bgRgb(0, 60, 0).rgb(57, 255, 20).bold(' NEW ! CTRL+P ⚡️ Command Palette ')
@@ -744,6 +883,29 @@ export function renderTable(results, pendingPings, frame, cursor = null, sortCol
       : normalizedFilter
     filterBadge = chalk.bgYellow.black.bold(` ${filterPrefix}${visibleFilter}${filterSuffix} `)
   }
+
+  // 📖 Mouse support: track last footer line hotkey zones
+  {
+    const lastFooterRow = lines.length + 1 // 📖 1-based terminal row (line about to be pushed)
+    const parts = [
+      { text: '  ', key: null },
+      { text: 'N Changelog', key: 'n' },
+    ]
+    if (hasCustomFilter) {
+      parts.push({ text: '  •  ', key: null })
+      // 📖 X key clears filter — compute width from rendered badge text
+      const badgePlain = `X Disable filter: "${customTextFilter.trim().replace(/\s+/g, ' ')}"`
+      parts.push({ text: ` ${badgePlain} `, key: 'x' })
+    }
+    let xPos = 1
+    for (const part of parts) {
+      const w = displayWidth(part.text)
+      if (part.key) footerHotkeys.push({ key: part.key, row: lastFooterRow, xStart: xPos, xEnd: xPos + w - 1 })
+      xPos += w
+    }
+  }
+
+  _lastLayout.footerHotkeys = footerHotkeys
 
   lines.push(
     '  ' + themeColors.hotkey('N') + themeColors.dim(' Changelog') +
