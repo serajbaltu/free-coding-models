@@ -1,6 +1,12 @@
 # Changelog
 ---
 
+## [0.3.31] - 2026-04-01
+
+### Changed
+- **Footer layout reorganized** — Discord link moved to the very bottom line of the TUI for better visibility
+- **X/Twitter support message** — added 🐦 "Support me on X: @vavanessa_dev 💖" with clickable link in the last release footer line
+
 ## [0.3.29] - 2026-03-27
 
 ### Added

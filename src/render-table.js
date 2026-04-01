@@ -820,12 +820,7 @@ export function renderTable(results, pendingPings, frame, cursor = null, sortCol
     themeColors.warning('\x1b]8;;https://github.com/vava-nessa/free-coding-models/graphs/contributors\x1b\\Contributors\x1b]8;;\x1b\\') +
     themeColors.dim('  •  ') +
     '☕ ' +
-    themeColors.footerCoffee('\x1b]8;;https://buymeacoffee.com/vavanessadev\x1b\\Buy me a coffee\x1b]8;;\x1b\\') +
-    themeColors.dim('  •  ') +
-    '💬 ' +
-    themeColors.footerDiscord('\x1b]8;;https://discord.gg/ZTNFHvvCkU\x1b\\Discord\x1b]8;;\x1b\\') +
-    themeColors.dim(' → ') +
-    themeColors.footerDiscord('https://discord.gg/ZTNFHvvCkU')
+    themeColors.footerCoffee('\x1b]8;;https://buymeacoffee.com/vavanessadev\x1b\\Buy me a coffee\x1b]8;;\x1b\\')
   lines.push(footerLine)
 
   if (versionStatus.isOutdated) {
@@ -887,6 +882,12 @@ export function renderTable(results, pendingPings, frame, cursor = null, sortCol
     ? chalk.rgb(255, 182, 193)(`Last release: ${lastReleaseDate}`)
     : ''
 
+  const xSupport = chalk.rgb(255, 182, 193)('🐦 Support me on X: ') +
+    '\x1b]8;;https://x.com/vavanessa_dev\x1b\\' +
+    chalk.cyan('@vavanessa_dev') +
+    '\x1b]8;;\x1b\\' +
+    chalk.rgb(255, 182, 193)(' 💖')
+
   lines.push(
     '  ' + themeColors.hotkey('N') + themeColors.dim(' Changelog') +
     (filterBadge
@@ -894,7 +895,16 @@ export function renderTable(results, pendingPings, frame, cursor = null, sortCol
       : '') +
     themeColors.dim('  •  ') +
     themeColors.dim('Ctrl+C Exit') +
-    (releaseLabel ? themeColors.dim('  •  ') + releaseLabel : '')
+    (releaseLabel ? themeColors.dim('  •  ') + releaseLabel : '') +
+    themeColors.dim('  •  ') + xSupport
+  )
+
+  // 📖 Discord link at the very bottom of the TUI
+  lines.push(
+    '  💬 ' +
+    themeColors.footerDiscord('\x1b]8;;https://discord.gg/ZTNFHvvCkU\x1b\\Join the Discord\x1b]8;;\x1b\\') +
+    themeColors.dim(' → ') +
+    themeColors.footerDiscord('https://discord.gg/ZTNFHvvCkU')
   )
 
   // 📖 Append \x1b[K (erase to EOL) to each line so leftover chars from previous
