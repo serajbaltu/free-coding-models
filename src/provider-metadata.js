@@ -60,6 +60,7 @@ export const ENV_VAR_NAMES = {
   zai:        'ZAI_API_KEY',
   gemini:     'GEMINI_API_KEY',
   chutes:     'CHUTES_API_KEY',
+  ovhcloud:   'OVH_AI_ENDPOINTS_ACCESS_TOKEN',
 }
 
 // 📖 OPENCODE_MODEL_MAP: sparse table of model IDs that differ between sources.js and OpenCode's
@@ -256,5 +257,12 @@ export const PROVIDER_METADATA = {
     signupUrl: 'https://chutes.ai',
     signupHint: 'Sign up and generate an API key',
     rateLimits: 'Free (community GPU-powered), no hard cap',
+  },
+  ovhcloud: {
+    label: 'OVHcloud AI 🆕',
+    color: chalk.rgb(100, 149, 205),
+    signupUrl: 'https://endpoints.ai.cloud.ovh.net',
+    signupHint: 'Manager → Public Cloud → AI Endpoints → API keys (optional: sandbox works without key)',
+    rateLimits: 'Free sandbox: 2 req/min per IP per model (no key). With API key: 400 RPM',
   },
 }

@@ -2,8 +2,12 @@
   <img src="https://img.shields.io/npm/v/free-coding-models?color=76b900&label=npm&logo=npm" alt="npm version">
   <img src="https://img.shields.io/node/v/free-coding-models?color=76b900&logo=node.js" alt="node version">
   <img src="https://img.shields.io/npm/l/free-coding-models?color=76b900" alt="license">
-  <img src="https://img.shields.io/badge/models-230-76b900?logo=nvidia" alt="models count">
-  <img src="https://img.shields.io/badge/providers-24-blue" alt="providers count">
+  <img src="https://img.shields.io/badge/models-238-76b900?logo=nvidia" alt="models count">
+  <img src="https://img.shields.io/badge/providers-25-blue" alt="providers count">
+  <br>
+  <img src="https://img.shields.io/badge/dependencies-1-76b900?logo=npm" alt="1 dependency">
+  <img src="https://img.shields.io/badge/provenance-sigstore-blueviolet?logo=signstore" alt="npm provenance">
+  <img src="https://img.shields.io/badge/supply_chain-verified-brightgreen" alt="supply chain verified">
 </p>
 
 <h1 align="center">free-coding-models</h1>
@@ -14,7 +18,7 @@
 
 <p align="center">
   <strong>Find the fastest free coding model in seconds</strong><br>
-  <sub>Ping 230 models across 24 AI Free providers in real-time </sub><br><sub> Install Free API endpoints to your favorite AI coding tool: <br>📦 OpenCode, 🦞 OpenClaw, 💘 Crush, 🪿 Goose, 🛠 Aider, 🐉 Qwen Code, 🤲 OpenHands, ⚡ Amp, π Pi, 🦘 Rovo or ♊ Gemini in one keystroke</sub>
+  <sub>Ping 238 models across 25 AI Free providers in real-time </sub><br><sub> Install Free API endpoints to your favorite AI coding tool: <br>📦 OpenCode, 🦞 OpenClaw, 💘 Crush, 🪿 Goose, 🛠 Aider, 🐉 Qwen Code, 🤲 OpenHands, ⚡ Amp, π Pi, 🦘 Rovo or ♊ Gemini in one keystroke</sub>
 </p>
 
 
@@ -51,7 +55,7 @@ create a free account on one of the [providers](#-list-of-free-ai-providers)
 
 ## 💡 Why this tool?
 
-There are **230+ free coding models** scattered across 24 providers. Which one is fastest right now? Which one is actually stable versus just lucky on the last ping?
+There are **238+ free coding models** scattered across 25 providers. Which one is fastest right now? Which one is actually stable versus just lucky on the last ping?
 
 This CLI pings them all in parallel, shows live latency, and calculates a **live Stability Score (0-100)**. Average latency alone is misleading if a model randomly spikes to 6 seconds; the stability score measures true reliability by combining **p95 latency** (30%), **jitter/variance** (30%), **spike rate** (20%), and **uptime** (20%). 
 
@@ -65,7 +69,7 @@ It then writes the model you pick directly into your coding tool's config — so
 
 Create a free account on one provider below to get started:
 
-**230 coding models** across 24 providers, ranked by [SWE-bench Verified](https://www.swebench.com).
+**238 coding models** across 25 providers, ranked by [SWE-bench Verified](https://www.swebench.com).
 
 | Provider | Models | Tier range | Free tier | Env var |
 |----------|--------|-----------|-----------|--------|
@@ -86,6 +90,7 @@ Create a free account on one provider below to get started:
 | [SiliconFlow](https://cloud.siliconflow.cn/account/ak) | 6 | S+ → A | Free models: usually 100 RPM, varies by model | `SILICONFLOW_API_KEY` |
 | [Cerebras](https://cloud.cerebras.ai) | 4 | S+ → B | Generous free tier (developer tier 10× higher limits) | `CEREBRAS_API_KEY` |
 | [Perplexity API](https://www.perplexity.ai/settings/api) | 4 | A+ → B | Tiered limits by spend (default ~50 RPM) | `PERPLEXITY_API_KEY` |
+| [OVHcloud AI Endpoints](https://endpoints.ai.cloud.ovh.net) | 8 | S → B | Free sandbox: 2 req/min/IP (no key). 400 RPM with key | `OVH_AI_ENDPOINTS_ACCESS_TOKEN` |
 | [Chutes AI](https://chutes.ai) | 4 | S → A | Free (community GPU-powered, no credit card) | `CHUTES_API_KEY` |
 | [DeepInfra](https://deepinfra.com/login) | 4 | A- → B+ | 200 concurrent requests (default) | `DEEPINFRA_API_KEY` |
 | [Fireworks AI](https://fireworks.ai) | 4 | S → B+ | $1 credits – 10 req/min without payment | `FIREWORKS_API_KEY` |
@@ -284,7 +289,7 @@ When a tool mode is active (via `Z`), models incompatible with that tool are hig
 
 ## ✨ Features
 
-- **Parallel pings** — all 230 models tested simultaneously via native `fetch`
+- **Parallel pings** — all 238 models tested simultaneously via native `fetch`
 - **Adaptive monitoring** — 2s burst for 60s → 10s normal → 30s idle
 - **Stability score** — composite 0–100 (p95 latency, jitter, spike rate, uptime)
 - **Smart ranking** — top 3 highlighted 🥇🥈🥉
@@ -322,7 +327,7 @@ We welcome contributions — issues, PRs, new provider integrations.
 
 ## ⚖️ Model Licensing & Commercial Use
 
-**Short answer:** All 230 models allow **commercial use of generated output (including code)**. You own what the models generate for you.
+**Short answer:** All 238 models allow **commercial use of generated output (including code)**. You own what the models generate for you.
 
 ### Output Ownership
 
@@ -351,6 +356,40 @@ For every model in this tool, **you own the generated output** — code, text, o
 5. **API-served models** (Claude, Gemini, Perplexity) grant full output ownership under their terms of service
 
 > ⚠️ **Disclaimer:** This is a summary, not legal advice. License terms can change. Always verify the current license on the model's official page before making legal decisions.
+
+---
+
+## 🛡️ Security & Trust
+
+### Supply Chain
+
+| Signal | Status |
+|--------|--------|
+| **npm Provenance** | ✅ Published with Sigstore-signed provenance |
+| **SBOM** | ✅ Software Bill of Materials attached to every GitHub Release |
+| **Dependencies** | ✅ 1 runtime dependency (`chalk`) |
+| **Lockfile** | ✅ `pnpm-lock.yaml` committed and tracked |
+| **Security Policy** | ✅ [`SECURITY.md`](SECURITY.md) |
+| **Code Owners** | ✅ [`CODEOWNERS`](CODEOWNERS) — all changes require maintainer review |
+| **Dependabot** | ✅ Weekly automated dependency + GitHub Actions updates |
+| **Audit CI** | ✅ `npm audit` runs on every push/PR + weekly scheduled scan |
+| **License** | ✅ MIT |
+
+### What This Tool Does
+
+- Pings public API endpoints to measure latency and check availability
+- Reads your API keys from `.env` files (only if you configure them)
+- Opens configuration files for editing (with your permission)
+- Reports anonymous usage data (no personal information — see footer)
+
+### What This Tool Does NOT Do
+
+- ❌ Does **not** send your API keys, code, or personal data to any third party
+- ❌ Does **not** install or execute arbitrary code beyond `chalk` (the only dependency)
+- ❌ Does **not** modify any files outside its own config directory
+- ❌ Does **not** require `sudo`, root, or elevated permissions
+
+> To report a vulnerability, see [`SECURITY.md`](SECURITY.md).
 
 ---
 

@@ -1,6 +1,23 @@
 # Changelog
 ---
 
+## [0.3.35] - 2026-04-07
+
+### Added
+- **OVHcloud AI Endpoints** — new European sovereign AI provider (8 models: Qwen3 Coder 30B MoE, GPT OSS 120B, GPT OSS 20B, Llama 3.3 70B, Qwen3 32B, R1 Distill 70B, Mistral Small 3.2, Llama 3.1 8B)
+- Free sandbox mode: 2 req/min per IP per model (no API key needed), 400 RPM with API key
+- **Now 238 models across 25 providers** (was 230/24)
+
+### SECURITY.md
+- **SECURITY.md** — full security policy with vulnerability reporting, architecture, and supply chain docs
+- **CODEOWNERS** — all changes require @vava-nessa review
+- **Dependabot** — weekly automated dependency + GitHub Actions updates (`.github/dependabot.yml`)
+- **Security Audit CI** — `npm audit` + lockfile lint on every push/PR + weekly schedule (`.github/workflows/security-audit.yml`)
+- **npm Provenance** — release workflow now publishes with `--provenance` (Sigstore-signed)
+- **SBOM generation** — Software Bill of Materials attached to every GitHub Release
+- **README trust badges** — dependency count, provenance, supply chain badges
+- **README 🛡️ Security section** — what the tool does/doesn't do, supply chain table
+
 ## [0.3.34] - 2026-04-06
 
 ### Added
