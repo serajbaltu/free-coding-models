@@ -21,6 +21,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      id-token: write
     steps:
       - uses: actions/checkout@v4
         with:
@@ -50,12 +51,19 @@ jobs:
       - run: npm ci
         if: steps.check.outputs.skip == 'false'
 
-      # 📖 Publish to npm registry
+      # 📖 Publish to npm registry with Sigstore provenance for supply-chain verification
+      # 📖 Provenance links the npm package to its exact source commit, builder, and workflow
       - name: Publish to npm
         if: steps.check.outputs.skip == 'false'
-        run: npm publish --access public
+        run: npm publish --access public --provenance
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      # 📖 Generate an SBOM (Software Bill of Materials) and attach to the GitHub Release
+      # 📖 Uses npm's built-in SBOM support (npm >= 10)
+      - name: Generate SBOM
+        if: steps.check.outputs.skip == 'false'
+        run: npm sbom --sbom-type application > sbom.json 2>/dev/null || true
 
       # 📖 Extract the changelog section for this version using Node.js.
       # 📖 More reliable than awk: handles dots in version numbers, date suffixes
@@ -126,9 +134,17 @@ jobs:
             echo "📝 Creating release with CHANGELOG notes"
             gh release create "v$VERSION" \
               --title "v$VERSION" \
+              --notes-file release_notes.md \
+              sbom.json 2>/dev/null || \
+            gh release create "v$VERSION" \
+              --title "v$VERSION" \
               --notes-file release_notes.md
           else
             echo "⚠️ No notes found — using auto-generated release notes"
+            gh release create "v$VERSION" \
+              --title "v$VERSION" \
+              --generate-notes \
+              sbom.json 2>/dev/null || \
             gh release create "v$VERSION" \
               --title "v$VERSION" \
               --generate-notes

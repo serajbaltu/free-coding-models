@@ -422,6 +422,21 @@ export const chutes = [
   ['Qwen/Qwen2.5-Coder-32B-Instruct',          'Qwen2.5 Coder 32B',    'A',  '46.0%', '32k'],
 ]
 
+// 📖 OVHcloud AI Endpoints - https://endpoints.ai.cloud.ovh.net
+// 📖 OpenAI-compatible API with European data sovereignty (GDPR)
+// 📖 Free sandbox: 2 req/min per IP per model (no API key needed), 400 RPM with API key
+// 📖 Env var: OVH_AI_ENDPOINTS_ACCESS_TOKEN
+export const ovhcloud = [
+  ['Qwen3-Coder-30B-A3B-Instruct',             'Qwen3 Coder 30B MoE',  'A+', '55.0%', '256k'],
+  ['gpt-oss-120b',                              'GPT OSS 120B',         'S',  '60.0%', '131k'],
+  ['gpt-oss-20b',                               'GPT OSS 20B',          'A',  '42.0%', '131k'],
+  ['Meta-Llama-3_3-70B-Instruct',               'Llama 3.3 70B',        'A-', '39.5%', '131k'],
+  ['Qwen3-32B',                                 'Qwen3 32B',            'A+', '50.0%', '32k'],
+  ['DeepSeek-R1-Distill-Llama-70B',             'R1 Distill 70B',       'A-', '40.0%', '131k'],
+  ['Mistral-Small-3.2-24B-Instruct-2506',       'Mistral Small 3.2',    'B+', '34.0%', '131k'],
+  ['Llama-3.1-8B-Instruct',                     'Llama 3.1 8B',         'B',  '28.8%', '131k'],
+]
+
 // 📖 Rovo Dev CLI source - https://www.atlassian.com/rovo
 // 📖 CLI tool only - no API endpoint - requires 'acli rovodev run'
 // 📖 Install: https://support.atlassian.com/rovo/docs/install-and-run-rovo-dev-cli-on-your-device/
@@ -595,6 +610,11 @@ export const sources = {
     name: 'Chutes AI',
     url: 'https://chutes.ai/v1/chat/completions',
     models: chutes,
+  },
+  ovhcloud: {
+    name: 'OVHcloud AI 🆕',
+    url: 'https://oai.endpoints.kepler.ai.cloud.ovh.net/v1/chat/completions',
+    models: ovhcloud,
   },
 }
 

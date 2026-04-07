@@ -882,12 +882,6 @@ export function renderTable(results, pendingPings, frame, cursor = null, sortCol
     ? chalk.rgb(255, 182, 193)(`Last release: ${lastReleaseDate}`)
     : ''
 
-  const xSupportBg = chalk.bgRgb(140, 0, 80).rgb(255, 255, 255).bold('🐦 Follow me on X: ') +
-    '\x1b]8;;https://x.com/vavanessadev\x1b\\' +
-    chalk.bgRgb(140, 0, 80).rgb(255, 200, 50).bold('@vavanessadev') +
-    '\x1b]8;;\x1b\\' +
-    chalk.bgRgb(140, 0, 80).rgb(255, 255, 255).bold(' to check my other projects! 💖')
-
   lines.push(
     '  ' + themeColors.hotkey('N') + themeColors.dim(' Changelog') +
     (filterBadge
@@ -895,8 +889,7 @@ export function renderTable(results, pendingPings, frame, cursor = null, sortCol
       : '') +
     themeColors.dim('  •  ') +
     themeColors.dim('Ctrl+C Exit') +
-    (releaseLabel ? themeColors.dim('  •  ') + releaseLabel : '') +
-    themeColors.dim('  •  ') + xSupportBg
+    (releaseLabel ? themeColors.dim('  •  ') + releaseLabel : '')
   )
 
   // 📖 Discord link at the very bottom of the TUI
