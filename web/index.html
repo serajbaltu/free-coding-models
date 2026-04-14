@@ -8,7 +8,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/styles.css">
+  <link rel="stylesheet" href="/styles.css?v=0.3.38">
 </head>
 <body>
   <!-- ─── Background Effects ─── -->
@@ -19,6 +19,15 @@
 
   <!-- ─── Toast Container ─── -->
   <div class="toast-container" id="toast-container"></div>
+
+  <!-- ─── Update Banner ─── -->
+  <div class="update-banner" id="update-banner" hidden>
+    <span class="update-banner__icon">🚀</span>
+    <span class="update-banner__text">A new version is available!</span>
+    <span class="update-banner__version" id="update-version"></span>
+    <button class="update-banner__btn" id="update-install">Update Now</button>
+    <button class="update-banner__close" id="update-dismiss">&times;</button>
+  </div>
 
   <!-- ─── Sidebar ─── -->
   <aside class="sidebar" id="sidebar">
@@ -39,8 +48,20 @@
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
         <span class="sidebar__nav-label">Analytics</span>
       </button>
+      <button class="sidebar__nav-item" data-view="recommend" id="nav-recommend" title="Smart Recommend">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+        <span class="sidebar__nav-label">Recommend</span>
+      </button>
+      <button class="sidebar__nav-item" data-view="changelog" id="nav-changelog" title="Changelog">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+        <span class="sidebar__nav-label">Changelog</span>
+      </button>
     </nav>
     <div class="sidebar__bottom">
+      <button class="sidebar__nav-item" id="sidebar-help-btn" title="Help">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+        <span class="sidebar__nav-label">Help</span>
+      </button>
       <button class="sidebar__nav-item" id="sidebar-theme-toggle" title="Toggle Theme">
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
         <span class="sidebar__nav-label">Theme</span>
@@ -64,16 +85,46 @@
             <span class="logo__icon">⚡</span>
             <span class="logo__text">free-coding-models</span>
           </div>
-          <span class="header__version" id="version-badge">v0.3.35</span>
+          <span class="header__version" id="version-badge">v0.3.37</span>
         </div>
         <div class="header__center">
           <div class="search-bar" id="search-bar">
             <svg class="search-bar__icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-            <input type="text" class="search-bar__input" id="search-input" placeholder="Search models, providers, tiers..." autocomplete="off">
+            <input type="text" class="search-bar__input" id="search-input" placeholder="Search models, providers, tiers... (Ctrl+K)" autocomplete="off">
             <kbd class="search-bar__kbd">Ctrl+K</kbd>
           </div>
         </div>
         <div class="header__right">
+          <!-- Tool Mode Switcher -->
+          <div class="tool-switcher" id="tool-switcher">
+            <button class="tool-switcher__btn" id="tool-switcher-btn" title="Select target tool">
+              <span class="tool-switcher__icon" id="tool-switcher-icon">📦</span>
+              <span class="tool-switcher__name" id="tool-switcher-name">OpenCode</span>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+            </button>
+            <div class="tool-switcher__dropdown" id="tool-switcher-dropdown" hidden>
+              <button class="tool-switcher__option tool-switcher__option--active" data-tool="opencode" data-icon="📦">📦 OpenCode CLI</button>
+              <button class="tool-switcher__option" data-tool="opencode-desktop" data-icon="📦">📦 OpenCode Desktop</button>
+              <button class="tool-switcher__option" data-tool="openclaw" data-icon="🦞">🦞 OpenClaw</button>
+              <button class="tool-switcher__option" data-tool="crush" data-icon="💘">💘 Crush</button>
+              <button class="tool-switcher__option" data-tool="goose" data-icon="🪿">🪿 Goose</button>
+              <button class="tool-switcher__option" data-tool="aider" data-icon="🛠">🛠 Aider</button>
+              <button class="tool-switcher__option" data-tool="qwen" data-icon="🐉">🐉 Qwen Code</button>
+              <button class="tool-switcher__option" data-tool="openhands" data-icon="🤲">🤲 OpenHands</button>
+              <button class="tool-switcher__option" data-tool="amp" data-icon="⚡">⚡ Amp</button>
+              <button class="tool-switcher__option" data-tool="rovo" data-icon="🦘">🦘 Rovo</button>
+              <button class="tool-switcher__option" data-tool="gemini" data-icon="♊">♊ Gemini CLI</button>
+            </div>
+          </div>
+          <!-- Ping Cadence -->
+          <div class="ping-cadence" id="ping-cadence">
+            <button class="btn btn--icon" id="ping-cadence-btn" title="Ping interval">
+              <span id="ping-cadence-label">10s</span>
+            </button>
+          </div>
+          <button class="btn btn--icon" id="cmd-palette-btn" title="Command Palette (Ctrl+P)">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
+          </button>
           <button class="btn btn--icon" id="theme-toggle" title="Toggle theme">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
           </button>
@@ -117,6 +168,13 @@
             <div class="stat-card__label">Fastest Model</div>
           </div>
         </div>
+        <div class="stat-card" id="stat-favorites">
+          <div class="stat-card__icon">⭐</div>
+          <div class="stat-card__body">
+            <div class="stat-card__value" id="stat-favorites-value">0</div>
+            <div class="stat-card__label">Favorites</div>
+          </div>
+        </div>
         <div class="stat-card" id="stat-providers">
           <div class="stat-card__icon">🌐</div>
           <div class="stat-card__body">
@@ -157,6 +215,13 @@
             <option value="all">All Providers</option>
           </select>
         </div>
+        <div class="filters__group">
+          <label class="filter-label">Show</label>
+          <div class="fav-filter" id="fav-filter">
+            <button class="fav-btn fav-btn--active" data-fav="all">All</button>
+            <button class="fav-btn" data-fav="favorites">⭐ Favorites</button>
+          </div>
+        </div>
         <div class="filters__spacer"></div>
         <div class="filters__group">
           <div class="live-indicator" id="live-indicator">
@@ -172,6 +237,7 @@
           <table class="models-table" id="models-table">
             <thead>
               <tr>
+                <th class="th--fav">★</th>
                 <th class="th--rank sortable" data-sort="idx">#</th>
                 <th class="th--tier sortable" data-sort="tier">Tier</th>
                 <th class="th--model sortable" data-sort="label">Model</th>
@@ -184,11 +250,12 @@
                 <th class="th--verdict sortable" data-sort="verdict">Verdict</th>
                 <th class="th--uptime sortable" data-sort="uptime">Uptime</th>
                 <th class="th--sparkline">Trend</th>
+                <th class="th--actions">Actions</th>
               </tr>
             </thead>
             <tbody id="table-body">
               <tr class="loading-row">
-                <td colspan="12">
+                <td colspan="14">
                   <div class="loading-spinner">
                     <div class="spinner"></div>
                     <span>Connecting to ping engine...</span>
@@ -208,8 +275,6 @@
           <h1 class="settings-page__title">⚙️ Provider Settings</h1>
           <p class="settings-page__subtitle">Manage your API keys and provider configurations. Keys are stored locally in <code>~/.free-coding-models.json</code></p>
         </div>
-
-        <!-- Settings Toolbar -->
         <div class="settings-toolbar" id="settings-toolbar">
           <div class="settings-toolbar__search">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
@@ -220,11 +285,7 @@
             <button class="btn" id="settings-collapse-all">Collapse All</button>
           </div>
         </div>
-
-        <!-- Provider Cards Container -->
-        <div class="settings-providers" id="settings-providers">
-          <!-- Populated by JS -->
-        </div>
+        <div class="settings-providers" id="settings-providers"></div>
       </div>
     </div>
 
@@ -236,27 +297,81 @@
           <p class="analytics-page__subtitle">Real-time insights across all providers and models</p>
         </div>
         <div class="analytics-grid" id="analytics-grid">
-          <!-- Provider Health Overview -->
           <div class="analytics-card analytics-card--wide" id="analytics-provider-health">
             <h3 class="analytics-card__title">Provider Health Overview</h3>
-            <div class="analytics-card__body" id="provider-health-body">
-              <!-- Populated by JS -->
-            </div>
+            <div class="analytics-card__body" id="provider-health-body"></div>
           </div>
-          <!-- Top 10 Fastest -->
           <div class="analytics-card" id="analytics-leaderboard">
             <h3 class="analytics-card__title">🏆 Fastest Models</h3>
-            <div class="analytics-card__body" id="leaderboard-body">
-              <!-- Populated by JS -->
-            </div>
+            <div class="analytics-card__body" id="leaderboard-body"></div>
           </div>
-          <!-- Tier Distribution -->
           <div class="analytics-card" id="analytics-tier-dist">
             <h3 class="analytics-card__title">Tier Distribution</h3>
-            <div class="analytics-card__body" id="tier-dist-body">
-              <!-- Populated by JS -->
+            <div class="analytics-card__body" id="tier-dist-body"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══════ SMART RECOMMEND VIEW ═══════ -->
+    <div class="view view--hidden" id="view-recommend">
+      <div class="recommend-page">
+        <div class="recommend-page__header">
+          <h1 class="recommend-page__title">🎯 Smart Recommend</h1>
+          <p class="recommend-page__subtitle">Answer a few questions and we'll pick the best model for your task</p>
+        </div>
+        <div class="recommend-wizard" id="recommend-wizard">
+          <!-- Step 1: Task Type -->
+          <div class="wizard-step" id="wizard-step-1">
+            <h3 class="wizard-step__title">What type of task are you working on?</h3>
+            <div class="wizard-options" id="wizard-task-type">
+              <button class="wizard-option" data-value="refactor"><span class="wizard-option__icon">🔧</span><span class="wizard-option__label">Complex Refactoring</span><span class="wizard-option__desc">Large-scale code changes, architecture updates</span></button>
+              <button class="wizard-option" data-value="feature"><span class="wizard-option__icon">✨</span><span class="wizard-option__label">New Feature</span><span class="wizard-option__desc">Building new functionality from scratch</span></button>
+              <button class="wizard-option" data-value="debug"><span class="wizard-option__icon">🐛</span><span class="wizard-option__label">Debugging</span><span class="wizard-option__desc">Finding and fixing bugs in existing code</span></button>
+              <button class="wizard-option" data-value="completion"><span class="wizard-option__icon">⌨️</span><span class="wizard-option__label">Code Completion</span><span class="wizard-option__desc">Autocomplete, snippets, quick suggestions</span></button>
+              <button class="wizard-option" data-value="review"><span class="wizard-option__icon">👀</span><span class="wizard-option__label">Code Review</span><span class="wizard-option__desc">Reviewing PRs, suggesting improvements</span></button>
             </div>
           </div>
+          <!-- Step 2: Priority -->
+          <div class="wizard-step" id="wizard-step-2" hidden>
+            <h3 class="wizard-step__title">What matters most to you?</h3>
+            <div class="wizard-options" id="wizard-priority">
+              <button class="wizard-option" data-value="speed"><span class="wizard-option__icon">⚡</span><span class="wizard-option__label">Speed</span><span class="wizard-option__desc">Fastest response time possible</span></button>
+              <button class="wizard-option" data-value="quality"><span class="wizard-option__icon">💎</span><span class="wizard-option__label">Quality</span><span class="wizard-option__desc">Best code quality and accuracy</span></button>
+              <button class="wizard-option" data-value="stability"><span class="wizard-option__icon">🛡️</span><span class="wizard-option__label">Stability</span><span class="wizard-option__desc">Most reliable, least downtime</span></button>
+              <button class="wizard-option" data-value="context"><span class="wizard-option__icon">📚</span><span class="wizard-option__label">Large Context</span><span class="wizard-option__desc">Handle massive codebases</span></button>
+            </div>
+          </div>
+          <!-- Step 3: Tool -->
+          <div class="wizard-step" id="wizard-step-3" hidden>
+            <h3 class="wizard-step__title">Which tool will you use?</h3>
+            <div class="wizard-options" id="wizard-tool">
+              <button class="wizard-option" data-value="opencode"><span class="wizard-option__icon">📦</span><span class="wizard-option__label">OpenCode</span></button>
+              <button class="wizard-option" data-value="crush"><span class="wizard-option__icon">💘</span><span class="wizard-option__label">Crush</span></button>
+              <button class="wizard-option" data-value="goose"><span class="wizard-option__icon">🪿</span><span class="wizard-option__label">Goose</span></button>
+              <button class="wizard-option" data-value="aider"><span class="wizard-option__icon">🛠</span><span class="wizard-option__label">Aider</span></button>
+              <button class="wizard-option" data-value="any"><span class="wizard-option__icon">🔄</span><span class="wizard-option__label">Any / Don't Care</span></button>
+            </div>
+          </div>
+          <!-- Results -->
+          <div class="wizard-step" id="wizard-results" hidden>
+            <h3 class="wizard-step__title">🏆 Recommended Models</h3>
+            <div class="wizard-results-list" id="wizard-results-list"></div>
+            <button class="btn btn--primary wizard-restart" id="wizard-restart">Start Over</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══════ CHANGELOG VIEW ═══════ -->
+    <div class="view view--hidden" id="view-changelog">
+      <div class="changelog-page">
+        <div class="changelog-page__header">
+          <h1 class="changelog-page__title">📜 Changelog</h1>
+          <p class="changelog-page__subtitle">Version history and release notes</p>
+        </div>
+        <div class="changelog-content" id="changelog-content">
+          <div class="loading-spinner"><div class="spinner"></div><span>Loading changelog...</span></div>
         </div>
       </div>
     </div>
@@ -266,9 +381,14 @@
       <div class="footer__left">
         <span>Made with ❤️ by <a href="https://vavanessa.dev" target="_blank">Vava-Nessa</a></span>
       </div>
+      <div class="footer__center">
+        <button class="footer-link" id="footer-help">Help (K)</button>
+        <button class="footer-link" id="footer-feedback">Feedback (I)</button>
+        <button class="footer-link" id="footer-palette">Palette (Ctrl+P)</button>
+      </div>
       <div class="footer__right">
         <a href="https://github.com/vava-nessa/free-coding-models" target="_blank">GitHub</a>
-        <a href="https://discord.gg/ZTNFHvvCkU" target="_blank">Discord</a>
+        <a href="https://discord.gg/Q9FJE7Dk" target="_blank">Discord</a>
       </div>
     </footer>
   </div>
@@ -279,8 +399,10 @@
       <h3 class="detail-panel__title" id="detail-title">Model Details</h3>
       <button class="detail-panel__close" id="detail-close">&times;</button>
     </div>
-    <div class="detail-panel__body" id="detail-body">
-      <!-- Populated by JS -->
+    <div class="detail-panel__body" id="detail-body"></div>
+    <div class="detail-panel__footer">
+      <button class="btn btn--primary detail-panel__launch" id="detail-launch">🚀 Launch in Tool</button>
+      <button class="btn detail-panel__fav" id="detail-fav">⭐ Favorite</button>
     </div>
   </div>
 
@@ -308,6 +430,84 @@
             <span class="export-option__label">Copy to Clipboard</span>
             <span class="export-option__desc">Copy model summary as text</span>
           </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ─── Command Palette Modal ─── -->
+  <div class="modal-overlay" id="cmd-palette-modal" hidden>
+    <div class="modal cmd-palette">
+      <div class="cmd-palette__search">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
+        <input type="text" class="cmd-palette__input" id="cmd-palette-input" placeholder="Type a command..." autocomplete="off">
+      </div>
+      <div class="cmd-palette__results" id="cmd-palette-results"></div>
+    </div>
+  </div>
+
+  <!-- ─── Help Modal ─── -->
+  <div class="modal-overlay" id="help-modal" hidden>
+    <div class="modal modal--lg">
+      <div class="modal__header">
+        <h2 class="modal__title">❓ Keyboard Shortcuts</h2>
+        <button class="modal__close" id="help-close">&times;</button>
+      </div>
+      <div class="modal__body">
+        <div class="help-grid">
+          <div class="help-section">
+            <h4 class="help-section__title">Navigation</h4>
+            <div class="help-shortcut"><kbd>Ctrl+K</kbd><span>Focus search</span></div>
+            <div class="help-shortcut"><kbd>Ctrl+P</kbd><span>Command palette</span></div>
+            <div class="help-shortcut"><kbd>K</kbd><span>Help overlay</span></div>
+            <div class="help-shortcut"><kbd>Esc</kbd><span>Close modals</span></div>
+          </div>
+          <div class="help-section">
+            <h4 class="help-section__title">Filters</h4>
+            <div class="help-shortcut"><kbd>T</kbd><span>Cycle tier filter</span></div>
+            <div class="help-shortcut"><kbd>F</kbd><span>Toggle favorites only</span></div>
+            <div class="help-shortcut"><kbd>1-8</kbd><span>Jump to tier (S+,S,A+...)</span></div>
+          </div>
+          <div class="help-section">
+            <h4 class="help-section__title">Actions</h4>
+            <div class="help-shortcut"><kbd>G</kbd><span>Toggle theme</span></div>
+            <div class="help-shortcut"><kbd>Z</kbd><span>Cycle tool mode</span></div>
+            <div class="help-shortcut"><kbd>W</kbd><span>Cycle ping cadence</span></div>
+            <div class="help-shortcut"><kbd>I</kbd><span>Feedback</span></div>
+            <div class="help-shortcut"><kbd>E</kbd><span>Export data</span></div>
+          </div>
+          <div class="help-section">
+            <h4 class="help-section__title">Views</h4>
+            <div class="help-shortcut"><kbd>1</kbd><span>Dashboard</span></div>
+            <div class="help-shortcut"><kbd>2</kbd><span>Settings</span></div>
+            <div class="help-shortcut"><kbd>3</kbd><span>Analytics</span></div>
+            <div class="help-shortcut"><kbd>4</kbd><span>Smart Recommend</span></div>
+            <div class="help-shortcut"><kbd>5</kbd><span>Changelog</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ─── Feedback Modal ─── -->
+  <div class="modal-overlay" id="feedback-modal" hidden>
+    <div class="modal">
+      <div class="modal__header">
+        <h2 class="modal__title">📝 Feedback</h2>
+        <button class="modal__close" id="feedback-close">&times;</button>
+      </div>
+      <div class="modal__body">
+        <div class="feedback-form">
+          <div class="feedback-type-group">
+            <button class="feedback-type-btn feedback-type-btn--active" data-type="suggestion">💡 Suggestion</button>
+            <button class="feedback-type-btn" data-type="bug">🐛 Bug Report</button>
+            <button class="feedback-type-btn" data-type="praise">❤️ Praise</button>
+          </div>
+          <textarea class="feedback-textarea" id="feedback-text" rows="5" placeholder="Tell us what you think..."></textarea>
+          <div class="feedback-actions">
+            <button class="btn btn--primary" id="feedback-submit">Submit Feedback</button>
+            <a class="btn" href="https://github.com/vava-nessa/free-coding-models/issues/new" target="_blank">Open GitHub Issue</a>
+          </div>
         </div>
       </div>
     </div>

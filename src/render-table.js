@@ -895,9 +895,9 @@ export function renderTable(results, pendingPings, frame, cursor = null, sortCol
   // 📖 Discord link at the very bottom of the TUI
   lines.push(
     '  💬 ' +
-    themeColors.footerDiscord('\x1b]8;;https://discord.gg/ZTNFHvvCkU\x1b\\Join the Discord\x1b]8;;\x1b\\') +
+    themeColors.footerDiscord('\x1b]8;;https://discord.gg/Q9FJE7Dk\x1b\\Join the Discord\x1b]8;;\x1b\\') +
     themeColors.dim(' → ') +
-    themeColors.footerDiscord('https://discord.gg/ZTNFHvvCkU')
+    themeColors.footerDiscord('https://discord.gg/Q9FJE7Dk')
   )
 
   // 📖 Append \x1b[K (erase to EOL) to each line so leftover chars from previous

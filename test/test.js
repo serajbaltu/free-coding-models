@@ -2114,7 +2114,8 @@ describe('tool bootstrap helpers', () => {
   it('resolves a fake tool binary from PATH without spawning it', () => {
     const dir = join(tmpdir(), `fcm-tool-bootstrap-${process.pid}-${Date.now()}`)
     mkdirSync(dir, { recursive: true })
-    const binaryPath = join(dir, 'crush')
+    const binaryName = process.platform === 'win32' ? 'crush.cmd' : 'crush'
+    const binaryPath = join(dir, binaryName)
 
     try {
       writeFileSync(binaryPath, '#!/bin/sh\nexit 0\n')

@@ -1,6 +1,28 @@
 # Changelog
 ---
 
+## [0.3.37] - 2026-04-07
+
+### Added
+- **⭐ Favorites** — Star/unstar models, persist to config, filter by favorites. Favorite count shown in stats bar.
+- **🔧 Tool Mode Switcher** — Dropdown to select target tool (OpenCode, Crush, Goose, Aider, Qwen, OpenHands, Amp, Rovo, Gemini CLI, etc.).
+- **⌨️ Command Palette** — `Ctrl+P` opens a fuzzy-search command palette with all dashboard actions.
+- **🎯 Smart Recommend Wizard** — 3-step questionnaire (task type → priority → tool) that scores and ranks the best models.
+- **📜 Changelog Viewer** — Dedicated view that fetches and renders `CHANGELOG.md` with styled markdown.
+- **❓ Help Overlay** — Keyboard shortcuts reference modal showing all hotkeys (`K` to open).
+- **📝 Feedback Form** — In-app feedback modal with suggestion/bug/praise categories (`I` to open).
+- **⏱️ Ping Cadence Control** — Cycle ping interval between 2s/5s/10s/30s (`W` key or header button).
+- **🚀 Model Launch** — Per-row launch button copies model ID to clipboard with tool context toast.
+- **📊 Detail Panel** — Click any row to open a side panel with full model stats, launch button, and favorite toggle.
+- **🔄 Update Banner** — Top banner notification when a new version is available.
+- **🌐 New API Endpoints** — `/api/changelog`, `/api/favorites` (GET/POST), `/api/ping-cadence` (GET/POST), `/api/version-check`.
+- **⌨️ Keyboard Shortcuts** — `G` theme, `Z` cycle tool, `W` ping speed, `F` favorites filter, `E` export, `1-5` view navigation.
+
+### Changed
+- Upgraded web dashboard from V2 (management console) to V3 (full feature parity with CLI).
+- Server `handleRequest` is now async with a shared `readBody()` helper for cleaner POST handling.
+- Ping loop interval is now dynamic and controllable from the client via `/api/ping-cadence`.
+
 ## [0.3.36] - 2026-04-07
 
 ### Added
@@ -561,7 +583,7 @@ _(Skipped — published as 0.3.28 without changelog in commit message, all chang
 ## 0.2.9
 
 ### Fixed
-- **Discord link**: Updated expired invite URL to `https://discord.gg/f2AjwV2AN` in README and TUI footer
+- **Discord link**: Updated expired invite URL to `https://discord.gg/Q9FJE7Dk` in README and TUI footer
 
 ### Added
 - **Discord link health-check workflow**: New GitHub Actions workflow (`check-discord-link.yml`) runs every 12 hours, validates the Discord invite via the Discord API, and auto-opens an issue labeled `discord-link` if the link becomes invalid

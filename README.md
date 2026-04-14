@@ -396,7 +396,7 @@ For every model in this tool, **you own the generated output** — code, text, o
 
 ## 📧 Support
 
-[GitHub Issues](https://github.com/vava-nessa/free-coding-models/issues) · [Discord](https://discord.gg/ZTNFHvvCkU)
+[GitHub Issues](https://github.com/vava-nessa/free-coding-models/issues) · [Discord](https://discord.gg/Q9FJE7Dk)
 
 ---
 

@@ -178,7 +178,16 @@ async function spawnOpenCode(args, providerKey, fcmConfig, existingZaiProxy = nu
   }
 
   const { spawn } = await import('child_process')
-  const child = spawn(resolveToolBinaryPath('opencode') || 'opencode', finalArgs, {
+  const binaryPath = resolveToolBinaryPath('opencode')
+  if (!binaryPath) {
+    console.error(chalk.red('\n  X Could not find "opencode" -- is it installed and in your PATH?'))
+    console.error(chalk.dim('    Install: npm install -g opencode-ai'))
+    console.error(chalk.dim('    Docs: https://opencode.ai'))
+    console.log()
+    if (zaiProxy) zaiProxy.close()
+    return 1
+  }
+  const child = spawn(binaryPath, finalArgs, {
     stdio: 'inherit',
     shell: true,
     detached: false,
